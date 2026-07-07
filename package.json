@@ -1,0 +1,11 @@
+{
+  "name": "bot-plopiee-server",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "api/webhook.js",
+  "dependencies": {
+    "@google/genai": "^0.1.1",
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  }
+}
