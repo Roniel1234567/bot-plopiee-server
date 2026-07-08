@@ -1,50 +1,34 @@
 import axios from 'axios';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
+// YA NO USAMOS EL SDK PORQUE ESTÁ FALLANDO LA RUTA
+// Haremos la petición directa a la API usando axios
 export default async function handler(req, res) {
+  
   // PRUEBA DE FUNCIONAMIENTO
   if (req.query.test === 'true') {
     try {
-      // Usamos el modelo que SIEMPRE existe en cuentas gratuitas
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-      const result = await model.generateContent("Hola, responde 'Conectado'");
-      return res.status(200).send("Resultado: " + result.response.text());
+      const respuesta = await generarRespuestaGemini("Hola, dime si funcionas");
+      return res.status(200).send("Resultado: " + respuesta);
     } catch (e) {
       return res.status(500).send("Error crítico: " + e.message);
     }
   }
 
-  // Lógica normal
-  if (req.method === 'GET') {
-    const { 'hub.mode': mode, 'hub.verify_token': token, 'hub.challenge': challenge } = req.query;
-    if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) return res.status(200).send(challenge);
-    return res.status(403).send('Forbidden');
-  }
-
-  if (req.method === 'POST') {
-    try {
-      const messaging = req.body.entry?.[0]?.messaging?.[0];
-      if (messaging?.message?.text && messaging.sender?.id) {
-        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-        const result = await model.generateContent(messaging.message.text);
-        await enviarMensajeInstagram(messaging.sender.id, result.response.text());
-      }
-      return res.status(200).send('EVENT_RECEIVED');
-    } catch (error) {
-      return res.status(200).send('EVENT_RECEIVED');
-    }
-  }
+  // Lógica normal de Webhook (POST y GET)...
+  // (Mantén aquí el resto de tu código igual)
 }
 
-async function enviarMensajeInstagram(recipientId, texto) {
+async function generarRespuestaGemini(texto) {
   try {
-    await axios.post(`https://graph.facebook.com/v21.0/me/messages`, 
-      { recipient: { id: recipientId }, message: { text: texto } },
-      { params: { access_token: process.env.INSTAGRAM_TOKEN } }
-    );
+    // LLAMADA DIRECTA A LA API (SIN EL SDK)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    
+    const response = await axios.post(url, {
+      contents: [{ parts: [{ text: texto }] }]
+    });
+
+    return response.data.candidates[0].content.parts[0].text;
   } catch (error) {
-    console.error("Error Instagram:", error.message);
+    return "Error técnico directo: " + (error.response?.data?.error?.message || error.message);
   }
 }
