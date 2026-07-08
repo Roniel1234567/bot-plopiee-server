@@ -8,7 +8,7 @@ export default async function handler(req, res) {
       const respuesta = await generarRespuestaGemini("Hola, dime si funcionas");
       return res.status(200).send("Resultado: " + respuesta);
     } catch (e) {
-      return res.status(500).send("Error crítico: " + e.message);
+      return res.status(500).send("Error crítico en handler: " + e.message);
     }
   }
 
@@ -44,17 +44,28 @@ export default async function handler(req, res) {
 }
 
 async function generarRespuestaGemini(texto) {
+  // Intentamos primero con gemini-1.5-flash-8b (Alta disponibilidad global en v1)
   try {
-    // CAMBIO CLAVE: Usamos la versión estable 'v1' en lugar de 'v1beta'
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
-    
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-8b:generateContent?key=${process.env.GEMINI_API_KEY}`;
     const response = await axios.post(url, {
       contents: [{ parts: [{ text: texto }] }]
     });
-
     return response.data.candidates[0].content.parts[0].text;
-  } catch (error) {
-    return "Error técnico directo: " + (error.response?.data?.error?.message || error.message);
+  } catch (error1) {
+    console.log("Falló Flash-8b, intentando fallback...");
+    
+    // FALLBACK 2: Intentar con la nomenclatura antigua por si tu proyecto quedó en v1beta antiguo
+    try {
+      const urlBeta = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      const responseBeta = await axios.post(urlBeta, {
+        contents: [{ parts: [{ text: texto }] }]
+      });
+      return responseBeta.data.candidates[0].content.parts[0].text;
+    } catch (error2) {
+      return "Error acumulado en todos los modelos disponibles: " + 
+             "(M1: " + (error1.response?.data?.error?.message || error1.message) + ") | " +
+             "(M2: " + (error2.response?.data?.error?.message || error2.message) + ")";
+    }
   }
 }
 
