@@ -1,95 +1,63 @@
-import express from 'express';
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
 
-const app = express();
-app.use(express.json());
-
-// Inicializamos el SDK de Gemini usando la API Key de las variables de entorno
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// 1. VALIDACIÓN DEL WEBHOOK (Esto lo pide Meta en el "Paso 3")
-app.get('/api/webhook', (req, res) => {
-    const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-    
+export default async function handler(req, res) {
+  // 1. VALIDACIÓN DEL WEBHOOK (GET)
+  if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('Webhook verificado correctamente.');
-            return res.status(200).send(challenge);
-        } else {
-            return res.status(403).sendStatus(403);
-        }
+    if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
+      return res.status(200).send(challenge);
     }
-});
+    return res.status(403).send('Forbidden');
+  }
 
-// 2. RECEPCIÓN DE MENSAJES DE INSTAGRAM
-app.post('/api/webhook', async (req, res) => {
+  // 2. RECEPCIÓN DE MENSAJES (POST)
+  if (req.method === 'POST') {
     const body = req.body;
+    console.log("Datos recibidos:", JSON.stringify(body, null, 2)); // ESTO ES PARA VER SI LLEGA ALGO
 
     if (body.object === 'instagram') {
-        try {
-            for (const entry of body.entry) {
-                if (entry.messaging) {
-                    const messagingEvent = entry.messaging[0];
-                    const senderId = messagingEvent.sender.id; // ID de Instagram del cliente
+      try {
+        for (const entry of body.entry) {
+          // Ajuste para detectar el mensaje correctamente
+          const messagingEvent = entry.messaging ? entry.messaging[0] : (entry.changes ? entry.changes[0].value.messages[0] : null);
+          
+          if (messagingEvent && messagingEvent.message && !messagingEvent.message.is_echo) {
+            const senderId = messagingEvent.sender.id;
+            const userMessage = messagingEvent.message.text;
 
-                    // Verificar que sea un mensaje de texto y que no sea un eco de nuestro propio bot
-                    if (messagingEvent.message && messagingEvent.message.text && !messagingEvent.message.is_echo) {
-                        const userMessage = messagingEvent.message.text;
-                        console.log(`Mensaje recibido de ${senderId}: ${userMessage}`);
-
-                        // Generar la respuesta usando la IA de Gemini
-                        const botResponse = await generarRespuestaGemini(userMessage);
-
-                        // Enviar la respuesta de vuelta al cliente en Instagram
-                        await enviarMensajeInstagram(senderId, botResponse);
-                    }
-                }
-            }
-            return res.status(200).send('EVENT_RECEIVED');
-        } catch (error) {
-            console.error('Error procesando el webhook:', error);
-            return res.status(500).send('ERROR');
+            const botResponse = await generarRespuestaGemini(userMessage);
+            await enviarMensajeInstagram(senderId, botResponse);
+          }
         }
-    } else {
-        return res.sendStatus(404);
+        return res.status(200).send('EVENT_RECEIVED');
+      } catch (error) {
+        console.error('Error:', error);
+        return res.status(500).send('Error');
+      }
     }
-});
+    return res.status(404).send('Not Found');
+  }
+}
 
-// FUNCIÓN PARA GENERAR RESPUESTA CON GEMINI
+// Tus funciones originales se quedan igual, solo asegúrate de que estén dentro del archivo
 async function generarRespuestaGemini(mensajeUsuario) {
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: mensajeUsuario,
-            config: {
-                // Aquí configuras las instrucciones del sistema y la personalidad de tu bot
-                systemInstruction: "Eres el asistente virtual amable y profesional de Plopiee. Responde de forma concisa, servicial y amigable.",
-            }
-        });
-        return response.text;
-    } catch (error) {
-        console.error('Error con la API de Gemini:', error);
-        return "Lo siento, tuve un pequeño inconveniente técnico. ¿Me lo podrías repetir?";
-    }
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash', // Cambiado a 1.5 para asegurar compatibilidad
+      contents: mensajeUsuario,
+      config: { systemInstruction: "Eres el asistente virtual amable y profesional de Plopiee." }
+    });
+    return response.text;
+  } catch (error) { return "Lo siento, tengo problemas técnicos."; }
 }
 
-// FUNCIÓN PARA ENVIAR EL MENSAJE POR LA API DE INSTAGRAM
 async function enviarMensajeInstagram(recipientId, texto) {
-    const PAGE_ACCESS_TOKEN = process.env.INSTAGRAM_TOKEN; // El token largo de p_lopiee
-    const url = `https://graph.facebook.com/v21.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`;
-
-    const payload = {
-        recipient: { id: recipientId },
-        message: { text: texto }
-    };
-
-    await axios.post(url, payload);
-    console.log(`Mensaje enviado con éxito a ${recipientId}`);
+  const url = `https://graph.facebook.com/v21.0/me/messages?access_token=${process.env.INSTAGRAM_TOKEN}`;
+  await axios.post(url, { recipient: { id: recipientId }, message: { text: texto } });
 }
-
-export default app;
