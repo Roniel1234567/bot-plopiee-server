@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Inicialización corregida
+const ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
 
 export default async function handler(req, res) {
   // 1. VALIDACIÓN DEL WEBHOOK (GET)
@@ -9,6 +10,8 @@ export default async function handler(req, res) {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
+
+    console.log("Intento de verificación. Token recibido:", token);
 
     if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
       return res.status(200).send(challenge);
@@ -18,43 +21,37 @@ export default async function handler(req, res) {
 
   // 2. RECEPCIÓN DE MENSAJES (POST)
   if (req.method === 'POST') {
-    const body = req.body;
-    console.log("Datos recibidos:", JSON.stringify(body, null, 2)); // ESTO ES PARA VER SI LLEGA ALGO
+    try {
+      const body = req.body;
+      
+      // Meta envía los mensajes en entry[0].messaging[0]
+      const entry = body.entry?.[0];
+      const messaging = entry?.messaging?.[0];
 
-    if (body.object === 'instagram') {
-      try {
-        for (const entry of body.entry) {
-          // Ajuste para detectar el mensaje correctamente
-          const messagingEvent = entry.messaging ? entry.messaging[0] : (entry.changes ? entry.changes[0].value.messages[0] : null);
-          
-          if (messagingEvent && messagingEvent.message && !messagingEvent.message.is_echo) {
-            const senderId = messagingEvent.sender.id;
-            const userMessage = messagingEvent.message.text;
+      if (messaging && messaging.message && !messaging.message.is_echo) {
+        const senderId = messaging.sender.id;
+        const userMessage = messaging.message.text;
 
-            const botResponse = await generarRespuestaGemini(userMessage);
-            await enviarMensajeInstagram(senderId, botResponse);
-          }
-        }
-        return res.status(200).send('EVENT_RECEIVED');
-      } catch (error) {
-        console.error('Error:', error);
-        return res.status(500).send('Error');
+        const botResponse = await generarRespuestaGemini(userMessage);
+        await enviarMensajeInstagram(senderId, botResponse);
       }
+      return res.status(200).send('EVENT_RECEIVED');
+    } catch (error) {
+      console.error('Error procesando POST:', error);
+      return res.status(500).send('Internal Server Error');
     }
-    return res.status(404).send('Not Found');
   }
 }
 
-// Tus funciones originales se quedan igual, solo asegúrate de que estén dentro del archivo
 async function generarRespuestaGemini(mensajeUsuario) {
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash', // Cambiado a 1.5 para asegurar compatibilidad
-      contents: mensajeUsuario,
-      config: { systemInstruction: "Eres el asistente virtual amable y profesional de Plopiee." }
-    });
-    return response.text;
-  } catch (error) { return "Lo siento, tengo problemas técnicos."; }
+    const model = ai.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const result = await model.generateContent(mensajeUsuario);
+    return result.response.text();
+  } catch (error) {
+    console.error("Error Gemini:", error);
+    return "Lo siento, tuve un error al procesar tu mensaje.";
+  }
 }
 
 async function enviarMensajeInstagram(recipientId, texto) {
