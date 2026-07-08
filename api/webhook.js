@@ -11,8 +11,6 @@ export default async function handler(req, res) {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    console.log("Intento de verificación. Token recibido:", token);
-
     if (mode === 'subscribe' && token === process.env.VERIFY_TOKEN) {
       return res.status(200).send(challenge);
     }
@@ -22,25 +20,28 @@ export default async function handler(req, res) {
   // 2. RECEPCIÓN DE MENSAJES (POST)
   if (req.method === 'POST') {
     try {
+      // Log para verificar qué llega exactamente
+      console.log("Cuerpo recibido:", JSON.stringify(req.body));
+      
       const { entry } = req.body;
 
       if (entry && entry[0].messaging && entry[0].messaging[0]) {
         const messaging = entry[0].messaging[0];
-        const senderId = messaging.sender.id;
+        const senderId = messaging.sender?.id;
         const userMessage = messaging.message?.text;
 
-        if (userMessage) {
-          console.log(`Mensaje recibido de ${senderId}: ${userMessage}`);
+        if (userMessage && senderId) {
+          console.log(`Procesando mensaje de ${senderId}: ${userMessage}`);
           const botResponse = await generarRespuestaGemini(userMessage);
           await enviarMensajeInstagram(senderId, botResponse);
         }
       }
       
-      // Siempre responder 200 a Meta lo antes posible
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
-      console.error('Error procesando POST:', error.message);
-      return res.status(500).send('Internal Server Error');
+      // Registro de error detallado para Vercel Logs
+      console.error('ERROR DETALLADO:', error.stack || error.message);
+      return res.status(500).send('Error Interno');
     }
   }
 
@@ -73,7 +74,7 @@ async function enviarMensajeInstagram(recipientId, texto) {
     );
     console.log("Mensaje enviado exitosamente a:", recipientId);
   } catch (error) {
-    // Esto es clave: veremos exactamente qué dice Meta si el error persiste
+    // Si falla, veremos la respuesta exacta de Facebook en los logs
     console.error("Error detallado de Facebook:", error.response?.data || error.message);
     throw error;
   }
