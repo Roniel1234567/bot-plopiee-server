@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   // 1. VALIDACIÓN DEL WEBHOOK (GET)
   if (req.method === 'GET') {
     
-    // --- PRUEBA FORZADA (Diagnóstico) ---
+    // Prueba forzada para diagnóstico
     if (req.query.test === 'true') {
       try {
         const respuesta = await generarRespuestaGemini("Hola, dime si funcionas");
@@ -17,7 +17,6 @@ export default async function handler(req, res) {
         return res.status(500).send("Error en Gemini: " + e.message);
       }
     }
-    // ------------------------------------
 
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -32,33 +31,30 @@ export default async function handler(req, res) {
   // 2. RECEPCIÓN DE MENSAJES (POST)
   if (req.method === 'POST') {
     try {
-      const { entry } = req.body;
-      if (entry?.[0]?.messaging?.[0]) {
-        const messaging = entry[0].messaging[0];
-        const senderId = messaging.sender?.id;
-        const userMessage = messaging.message?.text;
-
-        if (userMessage && senderId) {
-          const botResponse = await generarRespuestaGemini(userMessage);
-          await enviarMensajeInstagram(senderId, botResponse);
-        }
+      const messaging = req.body.entry?.[0]?.messaging?.[0];
+      
+      if (messaging?.message?.text && messaging.sender?.id) {
+        const botResponse = await generarRespuestaGemini(messaging.message.text);
+        await enviarMensajeInstagram(messaging.sender.id, botResponse);
       }
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
-      console.error('ERROR DETALLADO:', error.stack);
-      return res.status(500).send('Error');
+      console.error('ERROR EN POST:', error.message);
+      return res.status(200).send('EVENT_RECEIVED');
     }
   }
+
+  return res.status(405).send('Method Not Allowed');
 }
 
-async function generarRespuestaGemini(mensajeUsuario) {
+async function generarRespuestaGemini(texto) {
   try {
+    // Usamos el modelo estándar
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(mensajeUsuario);
+    const result = await model.generateContent(texto);
     return result.response.text();
   } catch (error) {
-    console.error("Error Gemini:", error.message);
-    return "Error al procesar con IA.";
+    return "Error técnico: " + error.message;
   }
 }
 
@@ -70,6 +66,6 @@ async function enviarMensajeInstagram(recipientId, texto) {
       { params: { access_token: process.env.INSTAGRAM_TOKEN } }
     );
   } catch (error) {
-    console.error("Error Facebook:", error.response?.data?.error?.message);
+    console.error("Error al enviar a Instagram:", error.response?.data?.error?.message || error.message);
   }
 }
