@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
 
-// Inicialización corregida
+// Inicialización
 const ai = new GoogleGenAI(process.env.GEMINI_API_KEY);
 
 export default async function handler(req, res) {
@@ -22,25 +22,29 @@ export default async function handler(req, res) {
   // 2. RECEPCIÓN DE MENSAJES (POST)
   if (req.method === 'POST') {
     try {
-      const body = req.body;
-      
-      // Meta envía los mensajes en entry[0].messaging[0]
-      const entry = body.entry?.[0];
-      const messaging = entry?.messaging?.[0];
+      const { entry } = req.body;
 
-      if (messaging && messaging.message && !messaging.message.is_echo) {
+      if (entry && entry[0].messaging && entry[0].messaging[0]) {
+        const messaging = entry[0].messaging[0];
         const senderId = messaging.sender.id;
-        const userMessage = messaging.message.text;
+        const userMessage = messaging.message?.text;
 
-        const botResponse = await generarRespuestaGemini(userMessage);
-        await enviarMensajeInstagram(senderId, botResponse);
+        if (userMessage) {
+          console.log(`Mensaje recibido de ${senderId}: ${userMessage}`);
+          const botResponse = await generarRespuestaGemini(userMessage);
+          await enviarMensajeInstagram(senderId, botResponse);
+        }
       }
+      
+      // Siempre responder 200 a Meta lo antes posible
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
-      console.error('Error procesando POST:', error);
+      console.error('Error procesando POST:', error.message);
       return res.status(500).send('Internal Server Error');
     }
   }
+
+  return res.status(405).send('Method Not Allowed');
 }
 
 async function generarRespuestaGemini(mensajeUsuario) {
@@ -49,12 +53,28 @@ async function generarRespuestaGemini(mensajeUsuario) {
     const result = await model.generateContent(mensajeUsuario);
     return result.response.text();
   } catch (error) {
-    console.error("Error Gemini:", error);
-    return "Lo siento, tuve un error al procesar tu mensaje.";
+    console.error("Error Gemini:", error.message);
+    return "Lo siento, tuve un error al procesar tu solicitud.";
   }
 }
 
 async function enviarMensajeInstagram(recipientId, texto) {
-  const url = `https://graph.facebook.com/v21.0/me/messages?access_token=${process.env.INSTAGRAM_TOKEN}`;
-  await axios.post(url, { recipient: { id: recipientId }, message: { text: texto } });
+  const url = `https://graph.facebook.com/v21.0/me/messages`;
+  
+  try {
+    await axios.post(url, 
+      {
+        recipient: { id: recipientId },
+        message: { text: texto }
+      },
+      {
+        params: { access_token: process.env.INSTAGRAM_TOKEN }
+      }
+    );
+    console.log("Mensaje enviado exitosamente a:", recipientId);
+  } catch (error) {
+    // Esto es clave: veremos exactamente qué dice Meta si el error persiste
+    console.error("Error detallado de Facebook:", error.response?.data || error.message);
+    throw error;
+  }
 }
