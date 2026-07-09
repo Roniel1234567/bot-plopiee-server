@@ -17,16 +17,18 @@ export default async function handler(req, res) {
     try {
       console.log('BODY RECIBIDO:', JSON.stringify(req.body));
       const { entry } = req.body;
-      if (entry?.[0]?.messaging?.[0]) {
-        const messaging = entry[0].messaging[0];
-        const senderId = messaging.sender?.id;
-        const userMessage = messaging.message?.text;
+      const change = entry?.[0]?.changes?.[0];
+
+      if (change?.field === 'messages') {
+        const value = change.value;
+        const senderId = value?.sender?.id;
+        const userMessage = value?.message?.text;
         if (userMessage && senderId) {
           const botResponse = await generarRespuestaGemini(userMessage);
           await enviarMensajeInstagram(senderId, botResponse);
         }
       } else {
-        console.log('NO SE ENCONTRO messaging[0] EN LA ESTRUCTURA ESPERADA');
+        console.log('NO SE ENCONTRO changes[0] CON field messages');
       }
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
