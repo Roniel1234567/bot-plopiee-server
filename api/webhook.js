@@ -15,6 +15,7 @@ export default async function handler(req, res) {
   }
   if (req.method === 'POST') {
     try {
+      console.log('BODY RECIBIDO:', JSON.stringify(req.body));
       const { entry } = req.body;
       if (entry?.[0]?.messaging?.[0]) {
         const messaging = entry[0].messaging[0];
@@ -24,6 +25,8 @@ export default async function handler(req, res) {
           const botResponse = await generarRespuestaGemini(userMessage);
           await enviarMensajeInstagram(senderId, botResponse);
         }
+      } else {
+        console.log('NO SE ENCONTRO messaging[0] EN LA ESTRUCTURA ESPERADA');
       }
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
