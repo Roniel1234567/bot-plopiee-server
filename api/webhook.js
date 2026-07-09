@@ -13,7 +13,6 @@ export default async function handler(req, res) {
     }
     return res.status(403).send('Forbidden');
   }
-
   if (req.method === 'POST') {
     try {
       const { entry } = req.body;
@@ -48,7 +47,7 @@ async function generarRespuestaGemini(mensajeUsuario) {
 }
 
 async function enviarMensajeInstagram(recipientId, texto) {
-  const url = `https://graph.facebook.com/v21.0/me/messages`;
+  const url = `https://graph.instagram.com/v21.0/me/messages`;
   try {
     await axios.post(
       url,
