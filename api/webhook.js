@@ -119,9 +119,26 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       return;
     }
 
+    // LÓGICA DE RECONEXIÓN AUTOMÁTICA A MODO IA
     if (conversation.is_human) {
-      console.log('Conversación en modo humano, bot no responde:', senderId);
-      return;
+      const ahora = new Date();
+      const ultimaActualizacion = new Date(conversation.updated_at);
+      const diferenciaMinutos = (ahora - ultimaActualizacion) / (1000 * 60);
+
+      if (diferenciaMinutos >= 5) {
+        console.log('Pasaron más de 5 minutos. Desactivando modo humano para:', senderId);
+        
+        // Forzamos el cambio en la base de datos y actualizamos la variable local
+        await supabase
+          .from('conversations')
+          .update({ is_human: false, updated_at: ahora.toISOString() })
+          .eq('id', conversation.id);
+          
+        conversation.is_human = false;
+      } else {
+        console.log('Conversación en modo humano activa, bot no responde:', senderId);
+        return;
+      }
     }
 
     const pideHumano = PALABRAS_HUMANO.some((palabra) =>
