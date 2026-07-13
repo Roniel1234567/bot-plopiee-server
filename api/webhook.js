@@ -6,6 +6,8 @@ import { waitUntil } from '@vercel/functions';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
+const PALABRAS_HUMANO = ['humano', 'agente', 'persona', 'asesor', 'operador', 'representante'];
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
@@ -36,7 +38,6 @@ export default async function handler(req, res) {
         userMessage = change.value.message.text;
         wamid = change.value.message.mid;
       } else {
-        // Evento sin texto (read/delivery, etc.) - lo ignoramos
         return res.status(200).send('EVENT_RECEIVED');
       }
 
@@ -44,10 +45,8 @@ export default async function handler(req, res) {
         return res.status(200).send('EVENT_RECEIVED');
       }
 
-      // Le decimos a Vercel: "sigue corriendo esto aunque ya respondamos"
       waitUntil(procesarMensaje({ senderId, userMessage, wamid }));
 
-      // Respondemos a Meta YA, sin esperar a Gemini
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
       console.error('ERROR DETALLADO:', error.stack);
@@ -60,7 +59,7 @@ export default async function handler(req, res) {
 
 async function procesarMensaje({ senderId, userMessage, wamid }) {
   try {
-    // 1. Buscar o crear la conversación de este usuario
+    // 1. Buscar o crear la conversación
     let { data: conversation } = await supabase
       .from('conversations')
       .select('*')
@@ -76,7 +75,7 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       conversation = newConv;
     }
 
-    // 2. Intentar guardar el mensaje del usuario (deduplicación por wa_message_id)
+    // 2. Guardar mensaje del usuario (deduplicación)
     const { error: insertError } = await supabase
       .from('messages')
       .insert({
@@ -87,21 +86,46 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       });
 
     if (insertError) {
-      // Si falla por duplicado (unique constraint), ya se procesó antes -> no hacemos nada más
       console.log('Mensaje duplicado, ignorado:', wamid);
       return;
     }
 
-    // 3. Si un humano está atendiendo esta conversación, el bot no responde
+    // 3. Si ya está en modo humano, no responde el bot
     if (conversation.is_human) {
       console.log('Conversación en modo humano, bot no responde:', senderId);
       return;
     }
 
-    // 4. Generar respuesta con Gemini
+    // 4. Detectar si el usuario pide un humano
+    const pideHumano = PALABRAS_HUMANO.some((palabra) =>
+      userMessage.toLowerCase().includes(palabra)
+    );
+
+    if (pideHumano) {
+      // Activar bandera is_human
+      await supabase
+        .from('conversations')
+        .update({ is_human: true, updated_at: new Date().toISOString() })
+        .eq('id', conversation.id);
+
+      const mensajeConfirmacion = 'Listo, en un momento un asesor te atiende 🙌';
+
+      await supabase.from('messages').insert({
+        conversation_id: conversation.id,
+        wa_message_id: `bot_${wamid}`,
+        role: 'bot',
+        content: mensajeConfirmacion,
+      });
+
+      await enviarMensajeInstagram(senderId, mensajeConfirmacion);
+      await notificarWhatsApp(senderId);
+      return;
+    }
+
+    // 5. Generar respuesta con Gemini
     const botResponse = await generarRespuestaGemini(userMessage);
 
-    // 5. Guardar la respuesta del bot
+    // 6. Guardar respuesta del bot
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
       wa_message_id: `bot_${wamid}`,
@@ -109,10 +133,10 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       content: botResponse,
     });
 
-    // 6. Enviar la respuesta al usuario
+    // 7. Enviar respuesta al usuario
     await enviarMensajeInstagram(senderId, botResponse);
 
-    // 7. Actualizar timestamp de la conversación
+    // 8. Actualizar timestamp
     await supabase
       .from('conversations')
       .update({ updated_at: new Date().toISOString() })
@@ -145,5 +169,27 @@ async function enviarMensajeInstagram(recipientId, texto) {
     );
   } catch (error) {
     console.error('Error Facebook:', error.response?.data?.error?.message);
+  }
+}
+
+async function notificarWhatsApp(senderId) {
+  const texto = encodeURIComponent(
+    `🔔 Un usuario de Instagram (ID: ${senderId}) pidió hablar con un humano. Revisa el chat.`
+  );
+
+  const notificaciones = [
+    { phone: process.env.WHATSAPP_NOTIFY_1_PHONE, apikey: process.env.WHATSAPP_NOTIFY_1_APIKEY },
+    { phone: process.env.WHATSAPP_NOTIFY_2_PHONE, apikey: process.env.WHATSAPP_NOTIFY_2_APIKEY },
+  ];
+
+  for (const n of notificaciones) {
+    if (!n.phone || !n.apikey) continue;
+    try {
+      await axios.get(
+        `https://api.callmebot.com/whatsapp.php?phone=${n.phone}&text=${texto}&apikey=${n.apikey}`
+      );
+    } catch (error) {
+      console.error(`Error notificando a ${n.phone}:`, error.message);
+    }
   }
 }
