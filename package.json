@@ -4,9 +4,10 @@
   "type": "module",
   "main": "api/webhook.js",
   "dependencies": {
-    "axios": "^1.7.0",
     "@google/genai": "^0.15.0",
     "@supabase/supabase-js": "^2.45.0",
-    "@vercel/functions": "^1.5.0"
+    "@upstash/qstash": "^2.7.0",
+    "@vercel/functions": "^1.5.0",
+    "axios": "^1.7.0"
   }
 }
