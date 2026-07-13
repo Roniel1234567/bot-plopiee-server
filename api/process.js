@@ -1,16 +1,9 @@
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { Receiver } from '@upstash/qstash';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
-
-// Validador de seguridad para asegurar que las peticiones vengan estrictamente de QStash
-const qstashReceiver = new Receiver({
-  currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY,
-  nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY,
-});
 
 const PALABRAS_HUMANO = ['humano', 'agente', 'persona', 'asesor', 'operador', 'representante'];
 
@@ -51,23 +44,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Validar firma de QStash para evitar peticiones maliciosas externas
-    const signature = req.headers['upstash-signature'];
-    const rawBody = JSON.stringify(req.body);
-    
-    const isValid = await qstashReceiver.verify({
-      signature,
-      body: rawBody,
-    }).catch(() => false);
-
-    if (!isValid) {
-      console.error('Firma de QStash inválida.');
-      return res.status(401).send('Unauthorized');
-    }
-
     const { senderId, userMessage, wamid, conversationId } = req.body;
 
-    // 2. Traer el estado más reciente de la conversación
+    // 1. Traer el estado más reciente de la conversación
     let { data: conversation } = await supabase
       .from('conversations')
       .select('*')
@@ -75,29 +54,29 @@ export default async function handler(req, res) {
       .single();
 
     if (!conversation) {
-      return res.status(200).send('Conversación no encontrada');
+      return res.status(200).send('Conversación no existente');
     }
 
-    // 3. Comprobar expiración del modo humano (5 minutos)
+    // 2. Comprobar si expiró el modo humano (Pasados los 5 minutos)
     if (conversation.is_human) {
       const ahora = new Date();
       const ultimaActualizacion = new Date(conversation.updated_at);
       const diferenciaMinutos = (ahora - ultimaActualizacion) / (1000 * 60);
 
       if (diferenciaMinutos >= 5) {
-        console.log('Modo humano expirado. Volviendo a modo IA:', senderId);
+        console.log('Modo humano expirado (5 min). Volviendo a modo IA para:', senderId);
         await supabase
           .from('conversations')
           .update({ is_human: false, updated_at: ahora.toISOString() })
           .eq('id', conversation.id);
         conversation.is_human = false;
       } else {
-        console.log('Modo humano activo. Bot omitido.');
+        console.log('El modo humano sigue vigente. El bot no interviene.');
         return res.status(200).send('MODO_HUMANO_ACTIVO');
       }
     }
 
-    // 4. Evaluar si solicita atención humana
+    // 3. Si el mensaje pide hablar con un humano
     const pideHumano = PALABRAS_HUMANO.some((palabra) =>
       userMessage.toLowerCase().includes(palabra)
     );
@@ -122,7 +101,7 @@ export default async function handler(req, res) {
       return res.status(200).send('TRANSFERIDO_A_HUMANO');
     }
 
-    // 5. Generar y enviar respuesta de Gemini
+    // 4. Enviar mensaje a Gemini y responder
     const botResponse = await generarRespuestaGemini(userMessage);
 
     await supabase.from('messages').insert({
@@ -139,10 +118,10 @@ export default async function handler(req, res) {
       .update({ updated_at: new Date().toISOString() })
       .eq('id', conversation.id);
 
-    return res.status(200).send('PROCESADO_EXITOSAMENTE');
+    return res.status(200).send('PROCESADO');
   } catch (error) {
-    console.error('Error en el procesamiento de la cola:', error);
-    return res.status(500).send('Error Interno');
+    console.error('Error en hilo de procesamiento:', error);
+    return res.status(500).send('Error');
   }
 }
 
@@ -151,7 +130,9 @@ async function generarRespuestaGemini(mensajeUsuario) {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: mensajeUsuario,
-      config: { systemInstruction: SYSTEM_INSTRUCTION },
+      config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
+      },
     });
     return response.text;
   } catch (error) {
@@ -175,12 +156,15 @@ async function enviarMensajeInstagram(recipientId, texto) {
 
 async function obtenerNombreUsuario(senderId) {
   try {
-    const response = await axios.get(`https://graph.instagram.com/${senderId}`, {
-      params: {
-        fields: 'name,username',
-        access_token: process.env.INSTAGRAM_TOKEN,
-      },
-    });
+    const response = await axios.get(
+      `https://graph.instagram.com/${senderId}`,
+      {
+        params: {
+          fields: 'name,username',
+          access_token: process.env.INSTAGRAM_TOKEN,
+        },
+      }
+    );
     return response.data.username || response.data.name || senderId;
   } catch (error) {
     console.error('Error obteniendo nombre de usuario:', error.response?.data?.error?.message);
@@ -190,6 +174,7 @@ async function obtenerNombreUsuario(senderId) {
 
 async function notificarWhatsApp(senderId, mensajeUsuario) {
   const nombreUsuario = await obtenerNombreUsuario(senderId);
+
   const texto = encodeURIComponent(
     `🔔 P'Lopiee (Instagram)\n\nCliente: ${nombreUsuario}\nMensaje: "${mensajeUsuario}"\n\nPidió hablar con un asesor. Entra a Instagram para atenderlo.`
   );
@@ -202,7 +187,9 @@ async function notificarWhatsApp(senderId, mensajeUsuario) {
   for (const n of notificaciones) {
     if (!n.phone || !n.apikey) continue;
     try {
-      await axios.get(`https://api.callmebot.com/whatsapp.php?phone=${n.phone}&text=${texto}&apikey=${n.apikey}`);
+      await axios.get(
+        `https://api.callmebot.com/whatsapp.php?phone=${n.phone}&text=${texto}&apikey=${n.apikey}`
+      );
     } catch (error) {
       console.error(`Error notificando a ${n.phone}:`, error.message);
     }
