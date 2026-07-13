@@ -144,7 +144,7 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       });
 
       await enviarMensajeInstagram(senderId, mensajeConfirmacion);
-      await notificarWhatsApp(senderId);
+      await notificarWhatsApp(senderId, userMessage);
       return;
     }
 
@@ -197,9 +197,29 @@ async function enviarMensajeInstagram(recipientId, texto) {
   }
 }
 
-async function notificarWhatsApp(senderId) {
+async function obtenerNombreUsuario(senderId) {
+  try {
+    const response = await axios.get(
+      `https://graph.instagram.com/${senderId}`,
+      {
+        params: {
+          fields: 'name,username',
+          access_token: process.env.INSTAGRAM_TOKEN,
+        },
+      }
+    );
+    return response.data.username || response.data.name || senderId;
+  } catch (error) {
+    console.error('Error obteniendo nombre de usuario:', error.response?.data?.error?.message);
+    return senderId;
+  }
+}
+
+async function notificarWhatsApp(senderId, mensajeUsuario) {
+  const nombreUsuario = await obtenerNombreUsuario(senderId);
+
   const texto = encodeURIComponent(
-    `🔔 Un usuario de Instagram (ID: ${senderId}) pidió hablar con un humano. Revisa el chat.`
+    `🔔 P'Lopiee (Instagram)\n\nCliente: ${nombreUsuario}\nMensaje: "${mensajeUsuario}"\n\nPidió hablar con un asesor. Entra a Instagram para atenderlo.`
   );
 
   const notificaciones = [
