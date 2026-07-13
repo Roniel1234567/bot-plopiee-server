@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
+import { waitUntil } from '@vercel/functions';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
@@ -43,14 +44,13 @@ export default async function handler(req, res) {
         return res.status(200).send('EVENT_RECEIVED');
       }
 
-      // Respondemos a Meta YA, antes de hacer trabajo pesado
-      res.status(200).send('EVENT_RECEIVED');
+      // Le decimos a Vercel: "sigue corriendo esto aunque ya respondamos"
+      waitUntil(procesarMensaje({ senderId, userMessage, wamid }));
 
-      // A partir de aquí, todo corre "en segundo plano"
-      procesarMensaje({ senderId, userMessage, wamid });
+      // Respondemos a Meta YA, sin esperar a Gemini
+      return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
       console.error('ERROR DETALLADO:', error.stack);
-      // Si ya no se ha respondido, respondemos algo
       if (!res.headersSent) {
         return res.status(500).send('Error');
       }
@@ -104,7 +104,7 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
     // 5. Guardar la respuesta del bot
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
-      wa_message_id: `bot_${wamid}`, // le damos un id propio para no chocar con el unique
+      wa_message_id: `bot_${wamid}`,
       role: 'bot',
       content: botResponse,
     });
