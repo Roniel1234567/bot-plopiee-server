@@ -59,7 +59,6 @@ export default async function handler(req, res) {
 
 async function procesarMensaje({ senderId, userMessage, wamid }) {
   try {
-    // 1. Buscar o crear la conversación
     let { data: conversation } = await supabase
       .from('conversations')
       .select('*')
@@ -75,7 +74,6 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       conversation = newConv;
     }
 
-    // 2. Guardar mensaje del usuario (deduplicación)
     const { error: insertError } = await supabase
       .from('messages')
       .insert({
@@ -90,19 +88,16 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       return;
     }
 
-    // 3. Si ya está en modo humano, no responde el bot
     if (conversation.is_human) {
       console.log('Conversación en modo humano, bot no responde:', senderId);
       return;
     }
 
-    // 4. Detectar si el usuario pide un humano
     const pideHumano = PALABRAS_HUMANO.some((palabra) =>
       userMessage.toLowerCase().includes(palabra)
     );
 
     if (pideHumano) {
-      // Activar bandera is_human
       await supabase
         .from('conversations')
         .update({ is_human: true, updated_at: new Date().toISOString() })
@@ -122,10 +117,8 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       return;
     }
 
-    // 5. Generar respuesta con Gemini
     const botResponse = await generarRespuestaGemini(userMessage);
 
-    // 6. Guardar respuesta del bot
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
       wa_message_id: `bot_${wamid}`,
@@ -133,10 +126,8 @@ async function procesarMensaje({ senderId, userMessage, wamid }) {
       content: botResponse,
     });
 
-    // 7. Enviar respuesta al usuario
     await enviarMensajeInstagram(senderId, botResponse);
 
-    // 8. Actualizar timestamp
     await supabase
       .from('conversations')
       .update({ updated_at: new Date().toISOString() })
