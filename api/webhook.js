@@ -95,12 +95,10 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
         (Date.now() - new Date(conversation.updated_at).getTime()) / 1000 / 60;
 
       if (minutosDesdeUltimaActividad < MINUTOS_TIMEOUT_HUMANO) {
-        // Todavía dentro del tiempo de espera, el bot no responde
         console.log('Conversación en modo humano (activo), no se encola:', senderId);
         return;
       }
 
-      // Ya pasó el tiempo límite, regresamos a modo IA
       await supabase
         .from('conversations')
         .update({ is_human: false })
@@ -115,7 +113,7 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
       body: { senderId, userMessage, wamid, conversationId: conversation.id },
       flowControl: {
         key: 'gemini-plopiee',
-        rate: 12,
+        rate: 8,
         period: '60s',
         parallelism: 1,
       },
