@@ -5,6 +5,8 @@ import { waitUntil } from '@vercel/functions';
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 const qstash = new Client({ token: process.env.QSTASH_TOKEN });
 
+const MINUTOS_TIMEOUT_HUMANO = 5;
+
 export default async function handler(req, res) {
   if (req.method === 'GET') {
     const mode = req.query['hub.mode'];
@@ -87,10 +89,24 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
       return;
     }
 
-    // 3. Si ya está en modo humano, no encolamos nada
+    // 3. Si está en modo humano, revisar si ya pasó el tiempo límite
     if (conversation.is_human) {
-      console.log('Conversación en modo humano, no se encola:', senderId);
-      return;
+      const minutosDesdeUltimaActividad =
+        (Date.now() - new Date(conversation.updated_at).getTime()) / 1000 / 60;
+
+      if (minutosDesdeUltimaActividad < MINUTOS_TIMEOUT_HUMANO) {
+        // Todavía dentro del tiempo de espera, el bot no responde
+        console.log('Conversación en modo humano (activo), no se encola:', senderId);
+        return;
+      }
+
+      // Ya pasó el tiempo límite, regresamos a modo IA
+      await supabase
+        .from('conversations')
+        .update({ is_human: false })
+        .eq('id', conversation.id);
+
+      console.log('Timeout de modo humano cumplido, bot reactivado para:', senderId);
     }
 
     // 4. Mandar el mensaje a la fila de QStash, con límite de velocidad
@@ -99,9 +115,9 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
       body: { senderId, userMessage, wamid, conversationId: conversation.id },
       flowControl: {
         key: 'gemini-plopiee',
-        rate: 12,       // máximo 12 llamadas
-        period: '60s',  // por cada 60 segundos (un poco por debajo del límite de 15/min de Gemini, por seguridad)
-        parallelism: 1, // una a la vez, para respetar el orden de llegada
+        rate: 12,
+        period: '60s',
+        parallelism: 1,
       },
     });
   } catch (error) {
