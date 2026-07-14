@@ -152,6 +152,25 @@ async function generarRespuestaGemini(mensajeUsuario) {
     });
     return response.text;
   } catch (error) {
+    const esErrorDeCuota =
+      error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+
+    if (esErrorDeCuota) {
+      console.log('Cuota excedida, esperando 5 segundos para reintentar...');
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      try {
+        const retryResponse = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: mensajeUsuario,
+          config: { systemInstruction: SYSTEM_INSTRUCTION },
+        });
+        return retryResponse.text;
+      } catch (retryError) {
+        console.error('Error Gemini (reintento falló):', retryError.message);
+        return 'Estamos teniendo mucha demanda ahorita, dame un momento y te respondo 🙏';
+      }
+    }
+
     console.error('Error Gemini:', error.message);
     return 'Estamos teniendo mucha demanda ahorita, dame un momento y te respondo 🙏';
   }
