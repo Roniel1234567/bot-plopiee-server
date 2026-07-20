@@ -57,7 +57,7 @@ SOBRE LA LÍNEA DE PRODUCTOS:
 Dawsy es una línea de productos para apoyar la pérdida de peso, de la empresa Danopac. Incluye varias presentaciones:
 
 1. Dawsy Quema Grasa (cápsulas de linaza 100% orgánica): disponible en presentaciones de 45, 90 y 100 cápsulas.
-2. Dawsy Fibra: en potes de 130g y 340g, en varios sabores (fresa, vainilla, manzana, naranja, piña).
+2. Dawsy Fibra: en potes de 340g y 34g, en varios sabores (fresa, vainilla, manzana, naranja, piña).
 3. Dawsy Fat: contiene Orlistat 120mg.
 4. Dawlax: contiene Picosulfato de sodio 7.5mg/ml, presentado en sobres, es un laxante.
 
@@ -92,6 +92,13 @@ const ACCOUNTS = {
     systemInstruction: SYSTEM_INSTRUCTION_DAWSY,
     marca: 'Dawsy Quema Grasa',
   },
+  // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
+  // 'ID_DE_INSTAGRAM_AQUI': {
+  //   name: 'tiktan',
+  //   token: process.env.INSTAGRAM_TOKEN_TIKTAN,
+  //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
+  //   marca: 'TikTán',
+  // },
 };
 
 async function getRawBody(req) {
@@ -194,10 +201,11 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
 async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       contents: mensajeUsuario,
       config: {
         systemInstruction,
+        maxOutputTokens: 200,
       },
     });
     return response.text;
@@ -210,9 +218,9 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       try {
         const retryResponse = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-2.5-flash-lite',
           contents: mensajeUsuario,
-          config: { systemInstruction },
+          config: { systemInstruction, maxOutputTokens: 200 },
         });
         return retryResponse.text;
       } catch (retryError) {
