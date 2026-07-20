@@ -23,6 +23,8 @@ export default async function handler(req, res) {
       const { entry } = req.body;
       const entryItem = entry?.[0];
 
+      const accountId = entryItem?.id;
+
       const messagingEvent = entryItem?.messaging?.[0];
       const change = entryItem?.changes?.[0];
 
@@ -44,7 +46,7 @@ export default async function handler(req, res) {
         return res.status(200).send('EVENT_RECEIVED');
       }
 
-      waitUntil(encolarMensaje({ senderId, userMessage, wamid }));
+      waitUntil(encolarMensaje({ senderId, userMessage, wamid, accountId }));
 
       return res.status(200).send('EVENT_RECEIVED');
     } catch (error) {
@@ -56,25 +58,24 @@ export default async function handler(req, res) {
   }
 }
 
-async function encolarMensaje({ senderId, userMessage, wamid }) {
+async function encolarMensaje({ senderId, userMessage, wamid, accountId }) {
   try {
-    // 1. Buscar o crear la conversación
     let { data: conversation } = await supabase
       .from('conversations')
       .select('*')
       .eq('sender_id', senderId)
+      .eq('account_id', accountId)
       .single();
 
     if (!conversation) {
       const { data: newConv } = await supabase
         .from('conversations')
-        .insert({ sender_id: senderId })
+        .insert({ sender_id: senderId, account_id: accountId })
         .select()
         .single();
       conversation = newConv;
     }
 
-    // 2. Guardar mensaje del usuario (deduplicación)
     const { error: insertError } = await supabase
       .from('messages')
       .insert({
@@ -89,7 +90,6 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
       return;
     }
 
-    // 3. Si está en modo humano, revisar si ya pasó el tiempo límite
     if (conversation.is_human) {
       const minutosDesdeUltimaActividad =
         (Date.now() - new Date(conversation.updated_at).getTime()) / 1000 / 60;
@@ -107,12 +107,11 @@ async function encolarMensaje({ senderId, userMessage, wamid }) {
       console.log('Timeout de modo humano cumplido, bot reactivado para:', senderId);
     }
 
-    // 4. Mandar el mensaje a la fila de QStash, con límite de velocidad
     await qstash.publishJSON({
       url: `${process.env.APP_URL}/api/process`,
-      body: { senderId, userMessage, wamid, conversationId: conversation.id },
+      body: { senderId, userMessage, wamid, conversationId: conversation.id, accountId },
       flowControl: {
-        key: 'gemini-plopiee',
+        key: 'gemini-danopac',
         rate: 8,
         period: '60s',
         parallelism: 1,
