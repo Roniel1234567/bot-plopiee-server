@@ -107,12 +107,13 @@ async function encolarMensaje({ senderId, userMessage, wamid, accountId }) {
       console.log('Timeout de modo humano cumplido, bot reactivado para:', senderId);
     }
 
+    // Fila y límite de velocidad INDEPENDIENTE por cada cuenta/marca
     await qstash.publishJSON({
       url: `${process.env.APP_URL}/api/process`,
       body: { senderId, userMessage, wamid, conversationId: conversation.id, accountId },
       flowControl: {
-        key: 'gemini-danopac',
-        rate: 8,
+        key: `gemini-${accountId}`,
+        rate: 15,
         period: '60s',
         parallelism: 1,
       },
