@@ -19,7 +19,7 @@ const receiver = new Receiver({
 
 const PALABRAS_HUMANO = ['humano', 'agente', 'persona', 'asesor', 'operador', 'representante'];
 
-const SYSTEM_INSTRUCTION = `Eres el asistente virtual oficial de P'Lopiee, un producto de la empresa Danopac, SRL.
+const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, un producto de la empresa Danopac, SRL.
 
 SOBRE EL PRODUCTO:
 P'Lopiee es una crema mentolada con Castaño de Indias y extracto de Hamamelis, especializada para el cuidado de los pies y las piernas. Está formulada para aliviar molestias como cansancio, hinchazón, sensación de pesadez, tensión muscular y várices.
@@ -40,16 +40,59 @@ PRECIO:
 El precio puede variar según el punto de venta. Si te preguntan cuánto cuesta, indica amablemente que deben consultar el precio en su farmacia más cercana o de su confianza, ya que puede variar.
 
 DÓNDE COMPRARLO:
-Disponible en farmacias (menciona que pueden preguntar en su farmacia de confianza si no tienen una específica en mente).
+Disponible en farmacias.
 
 TU ESTILO DE RESPUESTA:
 - Responde de forma amigable, cercana y profesional, como si fueras parte del equipo de atención al cliente de Danopac.
 - Sé breve y claro, evita respuestas muy largas.
-- IMPORTANTE - SALUDOS: NO empieces cada respuesta con un saludo tipo "Hola" o "¡Hola!". Responde directo a la pregunta o comentario del usuario, como lo haría una persona real en medio de una conversación ya iniciada. Solo puedes usar un saludo breve si es literalmente el primer mensaje de toda la conversación (por ejemplo, si el usuario te saluda primero con "hola").
-- IMPORTANTE - FORMATO: escribe en texto plano, como un mensaje normal de WhatsApp o Instagram. NUNCA uses Markdown ni símbolos de formato como asteriscos (**), guiones para listas (-), numerales (#), guiones bajos (_) ni ningún otro símbolo de formato. Si necesitas enumerar algo, hazlo con palabras naturales, nunca con listas con viñetas o símbolos.
-- Si preguntan algo médico muy específico, recomiéndales consultar con un médico o farmacéutico, no des consejos médicos como si fueras profesional de la salud.
-- Si preguntan algo que no tiene nada que ver con P'Lopiee o Danopac, redirige la conversación amablemente hacia el producto.
-- Si no sabes algo con certeza, no inventes información — menciona que un asesor humano puede ayudarles mejor con esa duda.`;
+- IMPORTANTE - SALUDOS: NO empieces cada respuesta con un saludo tipo "Hola". Responde directo, como en una conversación ya iniciada. Solo saluda si es literalmente el primer mensaje de la conversación.
+- IMPORTANTE - FORMATO: escribe en texto plano, sin Markdown (nada de asteriscos, guiones de lista, numerales, etc.).
+- Si preguntan algo médico muy específico, recomiéndales consultar con un médico o farmacéutico.
+- Si preguntan algo que no tiene nada que ver con P'Lopiee o Danopac, redirige amablemente hacia el producto.
+- Si no sabes algo con certeza, no inventes información — menciona que un asesor humano puede ayudarles mejor.`;
+
+const SYSTEM_INSTRUCTION_DAWSY = `Eres el asistente virtual oficial de Dawsy Quema Grasa, una línea de productos de la empresa Danopac, SRL.
+
+SOBRE LA LÍNEA DE PRODUCTOS:
+Dawsy es una línea de productos para apoyar la pérdida de peso, de la empresa Danopac. Incluye varias presentaciones:
+
+1. Dawsy Quema Grasa (cápsulas de linaza 100% orgánica): disponible en presentaciones de 45, 90 y 100 cápsulas.
+2. Dawsy Fibra: en potes de 130g y 34g, en varios sabores (fresa, vainilla, manzana, naranja, piña).
+3. Dawsy Fat: contiene Orlistat 120mg.
+4. Dawlax: contiene Picosulfato de sodio 7.5mg, presentado en sobres, es un laxante.
+
+Todos estos productos son parte de la línea para bajar de peso de Danopac, SRL.
+
+PRECIO:
+El precio puede variar según el punto de venta. Si preguntan cuánto cuesta, indica amablemente que deben consultar el precio en su farmacia más cercana o de su confianza.
+
+DÓNDE COMPRARLO:
+Disponible en farmacias.
+
+TU ESTILO DE RESPUESTA:
+- Responde de forma amigable, cercana y profesional, como parte del equipo de atención al cliente de Danopac.
+- Sé breve y claro, evita respuestas muy largas.
+- IMPORTANTE - SALUDOS: NO empieces cada respuesta con un saludo tipo "Hola". Responde directo, como en una conversación ya iniciada. Solo saluda si es literalmente el primer mensaje de la conversación.
+- IMPORTANTE - FORMATO: escribe en texto plano, sin Markdown (nada de asteriscos, guiones de lista, numerales, etc.).
+- IMPORTANTE - RESPONSABILIDAD MÉDICA: Dawsy Fat (Orlistat) y Dawlax (Picosulfato) son medicamentos, no suplementos simples. Nunca des indicaciones de dosis, tiempos de uso, ni combinaciones con otros medicamentos. Siempre recomienda consultar con un médico o farmacéutico antes de usarlos, especialmente si la persona tiene alguna condición de salud, está embarazada, en lactancia, o toma otros medicamentos.
+- No des consejos de dietas, calorías específicas, ni rutinas de pérdida de peso — enfócate solo en explicar qué es cada producto y sus características, y remite temas de salud o nutrición a un profesional.
+- Si preguntan algo que no tiene nada que ver con Dawsy o Danopac, redirige amablemente hacia el producto.
+- Si no sabes algo con certeza, no inventes información — menciona que un asesor humano puede ayudarles mejor.`;
+
+const ACCOUNTS = {
+  '17841477353996766': {
+    name: 'plopiee',
+    token: process.env.INSTAGRAM_TOKEN,
+    systemInstruction: SYSTEM_INSTRUCTION_PLOPIEE,
+    marca: "P'Lopiee",
+  },
+  '17841457133320413': {
+    name: 'dawsy',
+    token: process.env.INSTAGRAM_TOKEN_DAWSY,
+    systemInstruction: SYSTEM_INSTRUCTION_DAWSY,
+    marca: 'Dawsy Quema Grasa',
+  },
+};
 
 async function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -99,7 +142,14 @@ export default async function handler(req, res) {
   }
 }
 
-async function procesarMensaje({ senderId, userMessage, wamid, conversationId }) {
+async function procesarMensaje({ senderId, userMessage, wamid, conversationId, accountId }) {
+  const cuenta = ACCOUNTS[accountId];
+
+  if (!cuenta) {
+    console.error('Cuenta de Instagram no reconocida:', accountId);
+    return;
+  }
+
   const pideHumano = PALABRAS_HUMANO.some((palabra) =>
     userMessage.toLowerCase().includes(palabra)
   );
@@ -119,12 +169,12 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId })
       content: mensajeConfirmacion,
     });
 
-    await enviarMensajeInstagram(senderId, mensajeConfirmacion);
-    await notificarWhatsApp(senderId, userMessage);
+    await enviarMensajeInstagram(senderId, mensajeConfirmacion, cuenta.token);
+    await notificarWhatsApp(senderId, userMessage, cuenta);
     return;
   }
 
-  const botResponse = await generarRespuestaGemini(userMessage);
+  const botResponse = await generarRespuestaGemini(userMessage, cuenta.systemInstruction);
 
   await supabase.from('messages').insert({
     conversation_id: conversationId,
@@ -133,7 +183,7 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId })
     content: botResponse,
   });
 
-  await enviarMensajeInstagram(senderId, botResponse);
+  await enviarMensajeInstagram(senderId, botResponse, cuenta.token);
 
   await supabase
     .from('conversations')
@@ -141,13 +191,13 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId })
     .eq('id', conversationId);
 }
 
-async function generarRespuestaGemini(mensajeUsuario) {
+async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: mensajeUsuario,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
+        systemInstruction,
       },
     });
     return response.text;
@@ -162,7 +212,7 @@ async function generarRespuestaGemini(mensajeUsuario) {
         const retryResponse = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: mensajeUsuario,
-          config: { systemInstruction: SYSTEM_INSTRUCTION },
+          config: { systemInstruction },
         });
         return retryResponse.text;
       } catch (retryError) {
@@ -176,27 +226,27 @@ async function generarRespuestaGemini(mensajeUsuario) {
   }
 }
 
-async function enviarMensajeInstagram(recipientId, texto) {
+async function enviarMensajeInstagram(recipientId, texto, token) {
   const url = `https://graph.instagram.com/v21.0/me/messages`;
   try {
     await axios.post(
       url,
       { recipient: { id: recipientId }, message: { text: texto } },
-      { params: { access_token: process.env.INSTAGRAM_TOKEN } }
+      { params: { access_token: token } }
     );
   } catch (error) {
     console.error('Error Facebook:', error.response?.data?.error?.message);
   }
 }
 
-async function obtenerNombreUsuario(senderId) {
+async function obtenerNombreUsuario(senderId, token) {
   try {
     const response = await axios.get(
       `https://graph.instagram.com/${senderId}`,
       {
         params: {
           fields: 'name,username',
-          access_token: process.env.INSTAGRAM_TOKEN,
+          access_token: token,
         },
       }
     );
@@ -207,11 +257,11 @@ async function obtenerNombreUsuario(senderId) {
   }
 }
 
-async function notificarWhatsApp(senderId, mensajeUsuario) {
-  const nombreUsuario = await obtenerNombreUsuario(senderId);
+async function notificarWhatsApp(senderId, mensajeUsuario, cuenta) {
+  const nombreUsuario = await obtenerNombreUsuario(senderId, cuenta.token);
 
   const texto = encodeURIComponent(
-    `🔔 P'Lopiee (Instagram)\n\nCliente: ${nombreUsuario}\nMensaje: "${mensajeUsuario}"\n\nPidió hablar con un asesor. Entra a Instagram para atenderlo.`
+    `🔔 ${cuenta.marca} (Instagram)\n\nCliente: ${nombreUsuario}\nMensaje: "${mensajeUsuario}"\n\nPidió hablar con un asesor. Entra a Instagram para atenderlo.`
   );
 
   const notificaciones = [
