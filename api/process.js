@@ -201,7 +201,7 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
 async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
+      model: 'gemini-3.1-flash-lite',
       contents: mensajeUsuario,
       config: {
         systemInstruction,
@@ -218,7 +218,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
       await new Promise((resolve) => setTimeout(resolve, 5000));
       try {
         const retryResponse = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-lite',
+          model: 'gemini-3.1-flash-lite',
           contents: mensajeUsuario,
           config: { systemInstruction, maxOutputTokens: 200 },
         });
