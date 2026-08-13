@@ -49,11 +49,27 @@ function pideHumano(mensaje) {
 // Si el cliente pregunta por esto y la cuenta tiene un PDF configurado,
 // respondemos con un mensaje fijo + el PDF, SIN llamar a Gemini.
 // Esto ahorra la llamada completa a la API en ese tipo de pregunta.
-const PALABRAS_MODO_USO =
-  /\b(modo de uso|c[oó]mo se usa|c[oó]mo lo uso|c[oó]mo lo aplico|c[oó]mo aplicar|instrucciones|c[oó]mo (se )?toma|c[oó]mo tomarlo|c[oó]mo funcionan?|cu[aá]nt[oa]s?\s+c[aá]psulas|posolog[ií]a|dosis|hoja informativa|ficha t[eé]cnica|manual de uso)\b/i;
+const PALABRAS_MODO_USO_EXACTAS =
+  /\b(instrucciones|posolog[ií]a|dosis|hoja informativa|ficha t[eé]cnica|manual de uso|pdf)\b/i;
 
+function quitarAcentos(texto) {
+  return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Tolerante a errores de tipeo: si el mensaje contiene "modo" y "uso" en
+// cualquier orden/forma (ej. "modod de uso", "el modo uso"), o alguna de
+// las palabras exactas de arriba, se considera pregunta de modo de uso.
 function preguntaPorModoDeUso(mensaje) {
-  return PALABRAS_MODO_USO.test(mensaje.toLowerCase());
+  const texto = quitarAcentos(mensaje.toLowerCase());
+  const tieneModoYUso = texto.includes('modo') && texto.includes('uso');
+  const tieneComoSeUsa = /c[o0]mo\s+(se\s+)?(usa|toma|aplica|funciona)/i.test(texto);
+  const tieneCantidad = /cu[a\u00e1]nt[oa]s?\s+c[a\u00e1]psulas/i.test(texto);
+  return (
+    tieneModoYUso ||
+    tieneComoSeUsa ||
+    tieneCantidad ||
+    PALABRAS_MODO_USO_EXACTAS.test(texto)
+  );
 }
 
 // ─────────────────────────────────────────────────────────
@@ -86,7 +102,7 @@ const SYSTEM_INSTRUCTION_DAWSY = `Eres el asistente virtual oficial de Dawsy Que
 
 LÍNEA DE PRODUCTOS:
 1. Dawsy Quema Grasa (cápsulas de linaza 100% orgánica): presentaciones de 45, 90 y 100 cápsulas.
-   Modo de uso: se toma con agua, 1 a 2 cápsulas — 1 cápsula para quienes están empezando o buscan un efecto más suave, 2 cápsulas para un efecto más intenso, según lo que la persona busque.
+   Modo de uso: se toma con agua, 1 a 2 cápsulas — 1 cápsula para quienes están empezando o buscan un efecto más suave, 2 cápsulas para un efecto más intenso, según lo que la persona busque. Se recomienda beber abundante agua durante el día mientras se usa el producto.
 2. Dawsy Fibra: potes de 340g y 34g, sabores fresa, vainilla, manzana, naranja, piña.
 3. Dawsy Fat: contiene Orlistat 120mg.
 
