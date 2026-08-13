@@ -20,6 +20,17 @@ const receiver = new Receiver({
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "QUIERE HABLAR CON UN HUMANO"
 // ─────────────────────────────────────────────────────────
+// Antes esto usaba .includes() sobre palabras sueltas ("persona",
+// "operador", etc.), lo cual disparaba el modo humano con CUALQUIER
+// mensaje que contuviera esa palabra en cualquier contexto
+// (ej: "se la recomendé a otra persona"). Por eso llegaban al WhatsApp
+// notificaciones que no eran solicitudes reales.
+//
+// Ahora se dividen en dos grupos:
+// - Palabras fuertes: casi nunca aparecen fuera de este contexto,
+//   así que disparan solas.
+// - Palabras ambiguas: solo disparan si además hay un verbo de
+//   solicitud en el mismo mensaje.
 const PALABRAS_FUERTES = /\b(humano|agente|asesor)\b/i;
 const PALABRAS_AMBIGUAS = /\b(persona|operador|representante)\b/i;
 const VERBOS_SOLICITUD =
@@ -35,6 +46,9 @@ function pideHumano(mensaje) {
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "PREGUNTA POR MODO DE USO / INSTRUCCIONES"
 // ─────────────────────────────────────────────────────────
+// Si el cliente pregunta por esto y la cuenta tiene un PDF configurado,
+// respondemos con un mensaje fijo + el PDF, SIN llamar a Gemini.
+// Esto ahorra la llamada completa a la API en ese tipo de pregunta.
 const PALABRAS_MODO_USO_EXACTAS =
   /\b(instrucciones|posolog[ií]a|dosis|hoja informativa|ficha t[eé]cnica|manual de uso|pdf)\b/i;
 
@@ -42,6 +56,9 @@ function quitarAcentos(texto) {
   return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// Tolerante a errores de tipeo: si el mensaje contiene "modo" y "uso" en
+// cualquier orden/forma (ej. "modod de uso", "el modo uso"), o alguna de
+// las palabras exactas de arriba, se considera pregunta de modo de uso.
 function preguntaPorModoDeUso(mensaje) {
   const texto = quitarAcentos(mensaje.toLowerCase());
   const tieneModoYUso = texto.includes('modo') && texto.includes('uso');
@@ -56,7 +73,8 @@ function preguntaPorModoDeUso(mensaje) {
 }
 
 // ─────────────────────────────────────────────────────────
-// SYSTEM PROMPTS
+// SYSTEM PROMPTS (recortados para reducir tokens de entrada,
+// con instrucción explícita de brevedad para reducir tokens de salida)
 // ─────────────────────────────────────────────────────────
 const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, producto de Danopac, SRL.
 
@@ -132,6 +150,8 @@ ESTILO:
 // ─────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE CUENTAS
 // ─────────────────────────────────────────────────────────
+// pdfUrl es opcional: si no hay PDF configurado para una cuenta, la
+// pregunta de "modo de uso" se responde normal con IA (sin adjuntar nada).
 const ACCOUNTS = {
   '17841477353996766': {
     name: 'plopiee',
@@ -154,6 +174,14 @@ const ACCOUNTS = {
     marca: 'Dawrely',
     pdfUrl: process.env.DAWRELY_PDF_URL || null,
   },
+  // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
+  // 'ID_DE_INSTAGRAM_AQUI': {
+  //   name: 'tiktan',
+  //   token: process.env.INSTAGRAM_TOKEN_TIKTAN,
+  //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
+  //   marca: 'TikTán',
+  //   pdfUrl: process.env.TIKTAN_PDF_URL || null,
+  // },
 };
 
 async function getRawBody(req) {
