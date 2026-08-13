@@ -20,17 +20,6 @@ const receiver = new Receiver({
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "QUIERE HABLAR CON UN HUMANO"
 // ─────────────────────────────────────────────────────────
-// Antes esto usaba .includes() sobre palabras sueltas ("persona",
-// "operador", etc.), lo cual disparaba el modo humano con CUALQUIER
-// mensaje que contuviera esa palabra en cualquier contexto
-// (ej: "se la recomendé a otra persona"). Por eso llegaban al WhatsApp
-// notificaciones que no eran solicitudes reales.
-//
-// Ahora se dividen en dos grupos:
-// - Palabras fuertes: casi nunca aparecen fuera de este contexto,
-//   así que disparan solas.
-// - Palabras ambiguas: solo disparan si además hay un verbo de
-//   solicitud en el mismo mensaje.
 const PALABRAS_FUERTES = /\b(humano|agente|asesor)\b/i;
 const PALABRAS_AMBIGUAS = /\b(persona|operador|representante)\b/i;
 const VERBOS_SOLICITUD =
@@ -46,9 +35,6 @@ function pideHumano(mensaje) {
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "PREGUNTA POR MODO DE USO / INSTRUCCIONES"
 // ─────────────────────────────────────────────────────────
-// Si el cliente pregunta por esto y la cuenta tiene un PDF configurado,
-// respondemos con un mensaje fijo + el PDF, SIN llamar a Gemini.
-// Esto ahorra la llamada completa a la API en ese tipo de pregunta.
 const PALABRAS_MODO_USO_EXACTAS =
   /\b(instrucciones|posolog[ií]a|dosis|hoja informativa|ficha t[eé]cnica|manual de uso|pdf)\b/i;
 
@@ -56,9 +42,6 @@ function quitarAcentos(texto) {
   return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Tolerante a errores de tipeo: si el mensaje contiene "modo" y "uso" en
-// cualquier orden/forma (ej. "modod de uso", "el modo uso"), o alguna de
-// las palabras exactas de arriba, se considera pregunta de modo de uso.
 function preguntaPorModoDeUso(mensaje) {
   const texto = quitarAcentos(mensaje.toLowerCase());
   const tieneModoYUso = texto.includes('modo') && texto.includes('uso');
@@ -73,8 +56,7 @@ function preguntaPorModoDeUso(mensaje) {
 }
 
 // ─────────────────────────────────────────────────────────
-// SYSTEM PROMPTS (recortados para reducir tokens de entrada,
-// con instrucción explícita de brevedad para reducir tokens de salida)
+// SYSTEM PROMPTS
 // ─────────────────────────────────────────────────────────
 const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, producto de Danopac, SRL.
 
@@ -121,11 +103,35 @@ ESTILO:
 - Temas fuera de Dawsy/Danopac: redirige amablemente al producto.
 - Si preguntan algo de salud que de verdad no sabes con certeza (interacciones, condiciones médicas particulares), ahí sí no inventes: sugiere un médico, farmacéutico o un asesor humano.`;
 
+const SYSTEM_INSTRUCTION_DAWRELY = `Eres el asistente virtual oficial de Dawrely, línea de cuidado íntimo femenino de Danopac, SRL.
+
+LÍNEA DE PRODUCTOS (Jabones de lavado íntimo de uso externo):
+1. Dawrely Fem: Formulado con Ácido Láctico. Realiza una limpieza suave, acompaña el cuidado del equilibrio natural de la zona y brinda sensación de frescura.
+2. Dawrely Straits: Formulado con Alumbre. Limpia suavemente, ayuda a mantener un tono de piel más uniforme, y proporciona sensación de firmeza y estrechez gracias al alumbre.
+
+MODO DE USO GENERAL:
+De uso diario y exclusivamente externo. Humedecer la zona íntima externa con agua, aplicar una pequeña cantidad del jabón, masajear suavemente durante la limpieza, enjuagar muy bien con abundante agua y secar suavemente sin frotar.
+
+PRECAUCIONES IMPORTANTES:
+- Solo lavado externo. No introducir dentro de la vagina ni realizar duchas vaginales.
+- Evitar el contacto con los ojos.
+- Estos jabones no sustituyen tratamientos médicos. Ante síntomas como flujo anormal, mal olor persistente, ardor, dolor o picazón, orienta siempre a suspender el uso y consultar a un profesional de la salud (ginecólogo).
+
+PRECIO: varía según farmacia, indica que consulten en la de su preferencia.
+DÓNDE COMPRAR: en farmacias.
+
+ESTILO:
+- Amigable, cercano, profesional y respetuoso — como si fueras una persona real del equipo.
+- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque".
+- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- Temas fuera de Dawrely/Danopac: redirige amablemente al producto.
+- Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
+
 // ─────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE CUENTAS
 // ─────────────────────────────────────────────────────────
-// pdfUrl es opcional: si no hay PDF configurado para una cuenta, la
-// pregunta de "modo de uso" se responde normal con IA (sin adjuntar nada).
 const ACCOUNTS = {
   '17841477353996766': {
     name: 'plopiee',
@@ -141,14 +147,13 @@ const ACCOUNTS = {
     marca: 'Dawsy Quema Grasa',
     pdfUrl: process.env.DAWSY_PDF_URL || null,
   },
-  // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
-  // 'ID_DE_INSTAGRAM_AQUI': {
-  //   name: 'tiktan',
-  //   token: process.env.INSTAGRAM_TOKEN_TIKTAN,
-  //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
-  //   marca: 'TikTán',
-  //   pdfUrl: process.env.TIKTAN_PDF_URL || null,
-  // },
+  '17841477670966653': {
+    name: 'dawrely',
+    token: process.env.INSTAGRAM_TOKEN_DAWRELY,
+    systemInstruction: SYSTEM_INSTRUCTION_DAWRELY,
+    marca: 'Dawrely',
+    pdfUrl: process.env.DAWRELY_PDF_URL || null,
+  },
 };
 
 async function getRawBody(req) {
