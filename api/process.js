@@ -91,9 +91,10 @@ DÓNDE COMPRAR: en farmacias.
 
 ESTILO:
 - Amigable, cercano, profesional — como si fueras una persona real del equipo, no un robot que dispara datos.
-- Responde con seguridad y sustancia: 3-5 oraciones. Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
+- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
 - No saludes salvo que sea literalmente el primer mensaje de la conversación.
-- Texto plano, sin Markdown (nada de asteriscos, guiones, numerales).
 - Temas médicos específicos que no están en este prompt: recomienda consultar a un médico o farmacéutico.
 - Temas fuera de P'Lopiee/Danopac: redirige amablemente al producto.
 - Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
@@ -111,9 +112,10 @@ DÓNDE COMPRAR: en farmacias.
 
 ESTILO:
 - Amigable, cercano, profesional — como si fueras una persona real del equipo, no un robot que dispara datos.
-- Responde con seguridad y sustancia: 3-5 oraciones. Si la información está en este prompt (como el modo de uso de Dawsy Quema Grasa), dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
+- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta tiene varias ideas (ej. modo de uso + recomendación + beneficio), organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
 - No saludes salvo que sea literalmente el primer mensaje de la conversación.
-- Texto plano, sin Markdown (nada de asteriscos, guiones, numerales).
 - IMPORTANTE: Dawsy Fat (Orlistat) es un medicamento distinto — para ese sí, nunca des dosis, tiempos de uso ni combinaciones con otros medicamentos, siempre remite a un médico o farmacéutico, en especial si hay embarazo, lactancia u otras condiciones.
 - No des consejos de dietas, calorías ni rutinas de pérdida de peso.
 - Temas fuera de Dawsy/Danopac: redirige amablemente al producto.
@@ -122,8 +124,8 @@ ESTILO:
 // ─────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE CUENTAS
 // ─────────────────────────────────────────────────────────
-// pdfUrl y pdfMensaje son opcionales: si no hay PDF configurado para
-// una cuenta, la pregunta de "modo de uso" se responde normal con IA.
+// pdfUrl es opcional: si no hay PDF configurado para una cuenta, la
+// pregunta de "modo de uso" se responde normal con IA (sin adjuntar nada).
 const ACCOUNTS = {
   '17841477353996766': {
     name: 'plopiee',
@@ -131,8 +133,6 @@ const ACCOUNTS = {
     systemInstruction: SYSTEM_INSTRUCTION_PLOPIEE,
     marca: "P'Lopiee",
     pdfUrl: process.env.PLOPIEE_PDF_URL || null,
-    pdfMensaje:
-      'Claro, con gusto. Te comparto la ficha con el modo de uso completo de P\'Lopiee: ingredientes, beneficios y cómo aplicarla paso a paso 👇 Cualquier duda que te quede después de leerla, aquí estoy.',
   },
   '17841457133320413': {
     name: 'dawsy',
@@ -140,8 +140,6 @@ const ACCOUNTS = {
     systemInstruction: SYSTEM_INSTRUCTION_DAWSY,
     marca: 'Dawsy Quema Grasa',
     pdfUrl: process.env.DAWSY_PDF_URL || null,
-    pdfMensaje:
-      'Claro, con gusto. Te comparto la ficha completa con el modo de uso, presentaciones y recomendaciones de Dawsy 👇 Ante cualquier duda puntual sobre tu caso, lo mejor es consultarlo con tu médico o farmacéutico. Si te queda algo pendiente después de leerla, dime y te ayudo.',
   },
   // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
   // 'ID_DE_INSTAGRAM_AQUI': {
@@ -150,7 +148,6 @@ const ACCOUNTS = {
   //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
   //   marca: 'TikTán',
   //   pdfUrl: process.env.TIKTAN_PDF_URL || null,
-  //   pdfMensaje: 'Claro, aquí tienes la ficha con el modo de uso 👇',
   // },
 };
 
@@ -224,7 +221,7 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
     );
   }
   if (cuenta.pdfUrl && esPreguntaDeUso) {
-    await responderConPDF({ senderId, wamid, conversationId, cuenta });
+    await responderConPDF({ senderId, userMessage, wamid, conversationId, cuenta });
     return;
   }
 
@@ -252,8 +249,13 @@ async function escalarAHumano({ senderId, userMessage, wamid, conversationId, cu
   await notificarWhatsApp(senderId, userMessage, cuenta);
 }
 
-async function responderConPDF({ senderId, wamid, conversationId, cuenta }) {
-  await guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto: cuenta.pdfMensaje });
+async function responderConPDF({ senderId, userMessage, wamid, conversationId, cuenta }) {
+  const promptInterno = `${userMessage}
+
+(Instrucción interna, no la repitas ni la menciones: el cliente está preguntando por el modo de uso. Respóndele con tus propias palabras, de forma natural, cálida y variada -nunca repitas la misma frase textual entre conversaciones distintas-, usando el detalle real que tienes en tus instrucciones (dosis, cómo tomarlo, recomendaciones). Cierra la respuesta mencionando de forma natural que le compartes la ficha técnica completa a continuación.)`;
+
+  const texto = await generarRespuestaGemini(promptInterno, cuenta.systemInstruction);
+  await guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto });
   await enviarArchivoInstagram(senderId, cuenta.pdfUrl, cuenta.token);
 }
 
@@ -280,7 +282,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
       contents: mensajeUsuario,
       config: {
         systemInstruction,
-        maxOutputTokens: 220,
+        maxOutputTokens: 350,
       },
     });
     return response.text;
@@ -295,7 +297,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
         const retryResponse = await ai.models.generateContent({
           model: 'gemini-3.1-flash-lite',
           contents: mensajeUsuario,
-          config: { systemInstruction, maxOutputTokens: 220 },
+          config: { systemInstruction, maxOutputTokens: 350 },
         });
         return retryResponse.text;
       } catch (retryError) {
