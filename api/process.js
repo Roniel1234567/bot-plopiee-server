@@ -20,17 +20,6 @@ const receiver = new Receiver({
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "QUIERE HABLAR CON UN HUMANO"
 // ─────────────────────────────────────────────────────────
-// Antes esto usaba .includes() sobre palabras sueltas ("persona",
-// "operador", etc.), lo cual disparaba el modo humano con CUALQUIER
-// mensaje que contuviera esa palabra en cualquier contexto
-// (ej: "se la recomendé a otra persona"). Por eso llegaban al WhatsApp
-// notificaciones que no eran solicitudes reales.
-//
-// Ahora se dividen en dos grupos:
-// - Palabras fuertes: casi nunca aparecen fuera de este contexto,
-//   así que disparan solas.
-// - Palabras ambiguas: solo disparan si además hay un verbo de
-//   solicitud en el mismo mensaje.
 const PALABRAS_FUERTES = /\b(humano|agente|asesor)\b/i;
 const PALABRAS_AMBIGUAS = /\b(persona|operador|representante)\b/i;
 const VERBOS_SOLICITUD =
@@ -46,9 +35,6 @@ function pideHumano(mensaje) {
 // ─────────────────────────────────────────────────────────
 // DETECCIÓN DE "PREGUNTA POR MODO DE USO / INSTRUCCIONES"
 // ─────────────────────────────────────────────────────────
-// Si el cliente pregunta por esto y la cuenta tiene un PDF configurado,
-// respondemos con un mensaje fijo + el PDF, SIN llamar a Gemini.
-// Esto ahorra la llamada completa a la API en ese tipo de pregunta.
 const PALABRAS_MODO_USO_EXACTAS =
   /\b(instrucciones|posolog[ií]a|dosis|hoja informativa|ficha t[eé]cnica|manual de uso|pdf)\b/i;
 
@@ -56,9 +42,6 @@ function quitarAcentos(texto) {
   return texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
-// Tolerante a errores de tipeo: si el mensaje contiene "modo" y "uso" en
-// cualquier orden/forma (ej. "modod de uso", "el modo uso"), o alguna de
-// las palabras exactas de arriba, se considera pregunta de modo de uso.
 function preguntaPorModoDeUso(mensaje) {
   const texto = quitarAcentos(mensaje.toLowerCase());
   const tieneModoYUso = texto.includes('modo') && texto.includes('uso');
@@ -73,8 +56,7 @@ function preguntaPorModoDeUso(mensaje) {
 }
 
 // ─────────────────────────────────────────────────────────
-// SYSTEM PROMPTS (recortados para reducir tokens de entrada,
-// con instrucción explícita de brevedad para reducir tokens de salida)
+// SYSTEM PROMPTS
 // ─────────────────────────────────────────────────────────
 const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, producto de Danopac, SRL.
 
@@ -133,25 +115,24 @@ De uso diario y exclusivamente externo. Humedecer la zona íntima externa con ag
 PRECAUCIONES IMPORTANTES:
 - Solo lavado externo. No introducir dentro de la vagina ni realizar duchas vaginales.
 - Evitar el contacto con los ojos.
-- Estos jabones no sustituyen tratamientos médicos. Ante síntomas como flujo anormal, mal olor persistente, ardor, dolor o picazón, orienta siempre a suspender el uso y consultar a un profesional de la salud (ginecólogo).
+- Estos jabones no sustituyen tratamientos médicos. Ante síntomas como flujo anormal, mal olor persistentente, ardor, dolor o picazón, orienta siempre a suspender el uso y consultar a un profesional de la salud (ginecólogo).
 
 PRECIO: varía según farmacia, indica que consulten en la de su preferencia.
 DÓNDE COMPRAR: en farmacias.
 
 ESTILO:
 - Amigable, cercano, profesional y respetuoso — como si fueras una persona real del equipo.
-- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
-- Si la respuesta tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- ADAPTACIÓN DE LONGITUD: Analiza siempre lo que dice el cliente antes de responder. Si el cliente te manda un saludo simple (como "hola", "buenas", "hola qué tal"), una pregunta aislada muy breve o una interacción corta, responde de forma breve, natural y directa (1 o 2 oraciones máximo), sin soltar explicaciones largas ni presionar con información innecesaria. Si el cliente pregunta algo complejo, técnico o pide detalles del producto, entonces sí despliega una respuesta más completa (4-7 oraciones organizadas en párrafos cortos).
+- Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta larga tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
 - Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque".
-- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- No saludes con un saludo largo de bienvenida salvo que sea estrictamente necesario en el primer mensaje.
 - Temas fuera de Dawrely/Danopac: redirige amablemente al producto.
 - Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
 
 // ─────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE CUENTAS
 // ─────────────────────────────────────────────────────────
-// pdfUrl es opcional: si no hay PDF configurado para una cuenta, la
-// pregunta de "modo de uso" se responde normal con IA (sin adjuntar nada).
 const ACCOUNTS = {
   '17841477353996766': {
     name: 'plopiee',
@@ -174,14 +155,6 @@ const ACCOUNTS = {
     marca: 'Dawrely',
     pdfUrl: process.env.DAWRELY_PDF_URL || null,
   },
-  // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
-  // 'ID_DE_INSTAGRAM_AQUI': {
-  //   name: 'tiktan',
-  //   token: process.env.INSTAGRAM_TOKEN_TIKTAN,
-  //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
-  //   marca: 'TikTán',
-  //   pdfUrl: process.env.TIKTAN_PDF_URL || null,
-  // },
 };
 
 async function getRawBody(req) {
@@ -240,13 +213,11 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
     return;
   }
 
-  // 1) ¿Pide hablar con un humano?
   if (pideHumano(userMessage)) {
     await escalarAHumano({ senderId, userMessage, wamid, conversationId, cuenta });
     return;
   }
 
-  // 2) ¿Pregunta por modo de uso y hay PDF configurado? -> responde sin llamar a Gemini
   const esPreguntaDeUso = preguntaPorModoDeUso(userMessage);
   if (esPreguntaDeUso) {
     console.log(
@@ -258,7 +229,6 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
     return;
   }
 
-  // 3) Caso normal: responde con IA
   const botResponse = await generarRespuestaGemini(userMessage, cuenta.systemInstruction);
   await guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto: botResponse });
 }
@@ -346,19 +316,43 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
 
 async function enviarMensajeInstagram(recipientId, texto, token) {
   const url = `https://graph.instagram.com/v21.0/me/messages`;
+  const MAX_LENGTH = 950; // Un poco por debajo del límite de 1000 por seguridad
+
   try {
-    await axios.post(
-      url,
-      { recipient: { id: recipientId }, message: { text: texto } },
-      { params: { access_token: token } }
-    );
+    const fragmentos = [];
+    let textoRestante = texto;
+
+    while (textoRestante.length > 0) {
+      if (textoRestante.length <= MAX_LENGTH) {
+        fragmentos.push(textoRestante);
+        break;
+      }
+
+      let corte = textoRestante.lastIndexOf('\n', MAX_LENGTH);
+      if (corte === -1) corte = textoRestante.lastIndexOf(' ', MAX_LENGTH);
+      if (corte === -1) corte = MAX_LENGTH;
+
+      fragmentos.push(textoRestante.substring(0, corte).trim());
+      textoRestante = textoRestante.substring(corte).trim();
+    }
+
+    for (const fragmento of fragmentos) {
+      if (!fragmento) continue;
+      
+      await axios.post(
+        url,
+        { recipient: { id: recipientId }, message: { text: fragmento } },
+        { params: { access_token: token } }
+      );
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
   } catch (error) {
-    console.error('Error Facebook (texto):', error.response?.data?.error?.message);
+    console.error('Error Facebook (texto):', error.response?.data?.error?.message || error.message);
   }
 }
 
-// Envía un archivo (ej. PDF) usando la Send API de Instagram.
-// Requiere una URL pública (ej. un bucket público de Supabase Storage).
 async function enviarArchivoInstagram(recipientId, fileUrl, token) {
   const url = `https://graph.instagram.com/v21.0/me/messages`;
   try {
@@ -377,8 +371,6 @@ async function enviarArchivoInstagram(recipientId, fileUrl, token) {
     );
     console.log('PDF enviado correctamente a', recipientId);
   } catch (error) {
-    // Si esto falla, revisa: 1) tamaño del PDF (límite ~25MB en Meta),
-    // 2) que la URL sea realmente pública, 3) permisos del token.
     console.error(
       'Error Facebook (archivo):',
       JSON.stringify(error.response?.data?.error) || error.message
