@@ -56,7 +56,7 @@ function preguntaPorModoDeUso(mensaje) {
 }
 
 // ─────────────────────────────────────────────────────────
-// SYSTEM PROMPTS
+// SYSTEM PROMPTS (TODOS CON ADAPTACIÓN DE LONGITUD)
 // ─────────────────────────────────────────────────────────
 const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, producto de Danopac, SRL.
 
@@ -73,10 +73,11 @@ DÓNDE COMPRAR: en farmacias.
 
 ESTILO:
 - Amigable, cercano, profesional — como si fueras una persona real del equipo, no un robot que dispara datos.
-- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
-- Si la respuesta tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- ADAPTACIÓN DE LONGITUD: Analiza siempre lo que dice el cliente antes de responder. Si el cliente te manda un saludo simple (como "hola", "buenas", "hola qué tal"), una pregunta aislada muy breve o una interacción corta, responde de forma breve, natural y directa (1 o 2 oraciones máximo), sin soltar explicaciones largas ni presionar con información innecesaria. Si el cliente pregunta algo complejo, técnico o pide detalles del producto, entonces sí despliega una respuesta más completa (4-7 oraciones organizadas en párrafos cortos).
+- Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta larga tiene varias ideas, organízalas en 2-3 párrafos cortos separados por saltos de línea. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
 - Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
-- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- No saludes con un saludo largo de bienvenida salvo que sea estrictamente necesario en el primer mensaje.
 - Temas médicos específicos que no están en este prompt: recomienda consultar a un médico o farmacéutico.
 - Temas fuera de P'Lopiee/Danopac: redirige amablemente al producto.
 - Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
@@ -94,10 +95,11 @@ DÓNDE COMPRAR: en farmacias.
 
 ESTILO:
 - Amigable, cercano, profesional — como si fueras una persona real del equipo, no un robot que dispara datos.
-- Responde con detalle real y variedad: 4-7 oraciones cuando el tema lo amerite. Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
-- Si la respuesta tiene varias ideas (ej. modo de uso + recomendación + beneficio), organízalas en 2-3 párrafos cortos separados por saltos de línea para que sea fácil de leer. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
+- ADAPTACIÓN DE LONGITUD: Analiza siempre lo que dice el cliente antes de responder. Si el cliente te manda un saludo simple (como "hola", "buenas", "hola qué tal"), una pregunta aislada muy breve o una interacción corta, responde de forma breve, natural y directa (1 o 2 oraciones máximo), sin soltar explicaciones largas ni presionar con información innecesaria. Si el cliente pregunta algo complejo, técnico o pide detalles del producto, entonces sí despliega una respuesta más completa (4-7 oraciones organizadas en párrafos cortos).
+- Nunca repitas la misma frase textual de una conversación a otra para preguntas parecidas — reformula, varía el orden, varía las palabras, suena natural y espontáneo cada vez.
+- Si la respuesta larga tiene varias ideas (ej. modo de uso + recomendación + beneficio), organízalas en 2-3 párrafos cortos separados por saltos de línea. Nunca uses asteriscos, guiones de lista, numerales ni ningún símbolo de Markdown — en este chat se ven literalmente como símbolos sueltos, no como formato.
 - Si la información está en este prompt, dila directo y con confianza, sin desviar hacia "consulta el empaque" o "habla con un asesor" — eso es solo para lo que realmente no sabes.
-- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- No saludes con un saludo largo de bienvenida salvo que sea estrictamente necesario en el primer mensaje.
 - IMPORTANTE: Dawsy Fat (Orlistat) es un medicamento distinto — para ese sí, nunca des dosis, tiempos de uso ni combinaciones con otros medicamentos, siempre remite a un médico o farmacéutico, en especial si hay embarazo, lactancia u otras condiciones.
 - No des consejos de dietas, calorías ni rutinas de pérdida de peso.
 - Temas fuera de Dawsy/Danopac: redirige amablemente al producto.
@@ -115,7 +117,7 @@ De uso diario y exclusivamente externo. Humedecer la zona íntima externa con ag
 PRECAUCIONES IMPORTANTES:
 - Solo lavado externo. No introducir dentro de la vagina ni realizar duchas vaginales.
 - Evitar el contacto con los ojos.
-- Estos jabones no sustituyen tratamientos médicos. Ante síntomas como flujo anormal, mal olor persistentente, ardor, dolor o picazón, orienta siempre a suspender el uso y consultar a un profesional de la salud (ginecólogo).
+- Estos jabones no sustituyen tratamientos médicos. Ante síntomas como flujo anormal, mal olor persistente, ardor, dolor o picazón, orienta siempre a suspender el uso y consultar a un profesional de la salud (ginecólogo).
 
 PRECIO: varía según farmacia, indica que consulten en la de su preferencia.
 DÓNDE COMPRAR: en farmacias.
@@ -213,6 +215,8 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
     return;
   }
 
+  // 🔍 CORRECCIÓN: Validar primero si el cliente realmente quiere un humano
+  // usando la función `pideHumano`. Si es falso, el bot procesará el mensaje normalmente.
   if (pideHumano(userMessage)) {
     await escalarAHumano({ senderId, userMessage, wamid, conversationId, cuenta });
     return;
@@ -316,7 +320,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
 
 async function enviarMensajeInstagram(recipientId, texto, token) {
   const url = `https://graph.instagram.com/v21.0/me/messages`;
-  const MAX_LENGTH = 950; // Un poco por debajo del límite de 1000 por seguridad
+  const MAX_LENGTH = 950;
 
   try {
     const fragmentos = [];
@@ -380,7 +384,7 @@ async function enviarArchivoInstagram(recipientId, fileUrl, token) {
 
 async function obtenerNombreUsuario(senderId, token) {
   try {
-    const response = await axios.get(`https://graph.instagram.com/${senderId}`, {
+    const response = await axios.get(`https://graph.imageUrl/${senderId}`, {
       params: {
         fields: 'name,username',
         access_token: token,
