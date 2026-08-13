@@ -17,80 +17,113 @@ const receiver = new Receiver({
   nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY,
 });
 
-const PALABRAS_HUMANO = ['humano', 'agente', 'persona', 'asesor', 'operador', 'representante'];
+// ─────────────────────────────────────────────────────────
+// DETECCIÓN DE "QUIERE HABLAR CON UN HUMANO"
+// ─────────────────────────────────────────────────────────
+// Antes esto usaba .includes() sobre palabras sueltas ("persona",
+// "operador", etc.), lo cual disparaba el modo humano con CUALQUIER
+// mensaje que contuviera esa palabra en cualquier contexto
+// (ej: "se la recomendé a otra persona"). Por eso llegaban al WhatsApp
+// notificaciones que no eran solicitudes reales.
+//
+// Ahora se dividen en dos grupos:
+// - Palabras fuertes: casi nunca aparecen fuera de este contexto,
+//   así que disparan solas.
+// - Palabras ambiguas: solo disparan si además hay un verbo de
+//   solicitud en el mismo mensaje.
+const PALABRAS_FUERTES = /\b(humano|agente|asesor)\b/i;
+const PALABRAS_AMBIGUAS = /\b(persona|operador|representante)\b/i;
+const VERBOS_SOLICITUD =
+  /\b(hablar|quiero|necesito|comunicarme|contactar|pasar(me)?|conectar(me)?|atienda|atienda[nr]?)\b/i;
 
-const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, un producto de la empresa Danopac, SRL.
+function pideHumano(mensaje) {
+  const texto = mensaje.toLowerCase();
+  if (PALABRAS_FUERTES.test(texto)) return true;
+  if (PALABRAS_AMBIGUAS.test(texto) && VERBOS_SOLICITUD.test(texto)) return true;
+  return false;
+}
 
-SOBRE EL PRODUCTO:
-P'Lopiee es una crema mentolada con Castaño de Indias y extracto de Hamamelis, especializada para el cuidado de los pies y las piernas. Está formulada para aliviar molestias como cansancio, hinchazón, sensación de pesadez, tensión muscular y várices.
+// ─────────────────────────────────────────────────────────
+// DETECCIÓN DE "PREGUNTA POR MODO DE USO / INSTRUCCIONES"
+// ─────────────────────────────────────────────────────────
+// Si el cliente pregunta por esto y la cuenta tiene un PDF configurado,
+// respondemos con un mensaje fijo + el PDF, SIN llamar a Gemini.
+// Esto ahorra la llamada completa a la API en ese tipo de pregunta.
+const PALABRAS_MODO_USO =
+  /\b(modo de uso|c[oó]mo se usa|c[oó]mo lo uso|c[oó]mo lo aplico|c[oó]mo aplicar|instrucciones|c[oó]mo (se )?toma|c[oó]mo tomarlo|posolog[ií]a|dosis|c[oó]mo funciona|hoja informativa|ficha t[eé]cnica)\b/i;
 
-INGREDIENTES CLAVE Y BENEFICIOS:
-- Extracto de Hamamelis Virginiana: astringente, antiinflamatorio y calmante. Reduce la inflamación, el enrojecimiento y la irritación, y tonifica y refresca la piel.
-- Extracto de Castaño de Indias: vasoprotector y descongestivo. Favorece la microcirculación, fortalece las venas y reduce la sensación de pesadez, hinchazón y fatiga.
-- Mentol: refrescante, calmante y descongestionante. Genera una sensación inmediata de frescor que alivia la incomodidad, el cansancio y la tensión muscular/cutánea, revitalizando la piel.
-- Diclofenaco: antiinflamatorio no esteroideo (AINE) y analgésico. Reduce la inflamación localizada y alivia el dolor causado por tensión muscular, golpes o fatiga, mejorando el confort y la movilidad.
+function preguntaPorModoDeUso(mensaje) {
+  return PALABRAS_MODO_USO.test(mensaje.toLowerCase());
+}
 
-BENEFICIOS GENERALES:
-- Alivia el cansancio y pesadez de piernas y pies.
-- Ayuda con la sensación de várices y mala circulación.
-- Antiinflamatorio y calmante para golpes o tensión muscular.
-- Efecto refrescante inmediato gracias al mentol.
+// ─────────────────────────────────────────────────────────
+// SYSTEM PROMPTS (recortados para reducir tokens de entrada,
+// con instrucción explícita de brevedad para reducir tokens de salida)
+// ─────────────────────────────────────────────────────────
+const SYSTEM_INSTRUCTION_PLOPIEE = `Eres el asistente virtual oficial de P'Lopiee, producto de Danopac, SRL.
 
-PRECIO:
-El precio puede variar según el punto de venta. Si te preguntan cuánto cuesta, indica amablemente que deben consultar el precio en su farmacia más cercana o de su confianza, ya que puede variar.
+PRODUCTO: Crema mentolada con Castaño de Indias y extracto de Hamamelis, para pies y piernas. Alivia cansancio, hinchazón, pesadez, tensión muscular y várices.
 
-DÓNDE COMPRARLO:
-Disponible en farmacias.
+INGREDIENTES:
+- Hamamelis Virginiana: astringente, antiinflamatorio, calma irritación y tonifica la piel.
+- Castaño de Indias: vasoprotector, mejora la microcirculación, reduce pesadez e hinchazón.
+- Mentol: efecto refrescante inmediato, alivia cansancio y tensión.
+- Diclofenaco (AINE): reduce inflamación localizada y dolor por golpes o tensión muscular.
 
-TU ESTILO DE RESPUESTA:
-- Responde de forma amigable, cercana y profesional, como si fueras parte del equipo de atención al cliente de Danopac.
-- Sé breve y claro, evita respuestas muy largas.
-- IMPORTANTE - SALUDOS: NO empieces cada respuesta con un saludo tipo "Hola". Responde directo, como en una conversación ya iniciada. Solo saluda si es literalmente el primer mensaje de la conversación.
-- IMPORTANTE - FORMATO: escribe en texto plano, sin Markdown (nada de asteriscos, guiones de lista, numerales, etc.).
-- Si preguntan algo médico muy específico, recomiéndales consultar con un médico o farmacéutico.
-- Si preguntan algo que no tiene nada que ver con P'Lopiee o Danopac, redirige amablemente hacia el producto.
-- Si no sabes algo con certeza, no inventes información — menciona que un asesor humano puede ayudarles mejor.`;
+PRECIO: varía según farmacia, indica que consulten en la de su preferencia.
+DÓNDE COMPRAR: en farmacias.
 
-const SYSTEM_INSTRUCTION_DAWSY = `Eres el asistente virtual oficial de Dawsy Quema Grasa, una línea de productos de la empresa Danopac, SRL.
+ESTILO:
+- Amigable, cercano, profesional.
+- MÁXIMO 2-3 oraciones cortas por respuesta. Ve directo al punto.
+- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- Texto plano, sin Markdown (nada de asteriscos, guiones, numerales).
+- Temas médicos específicos: recomienda consultar a un médico o farmacéutico.
+- Temas fuera de P'Lopiee/Danopac: redirige amablemente al producto.
+- Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
 
-SOBRE LA LÍNEA DE PRODUCTOS:
-Dawsy es una línea de productos para apoyar la pérdida de peso, de la empresa Danopac. Incluye varias presentaciones:
+const SYSTEM_INSTRUCTION_DAWSY = `Eres el asistente virtual oficial de Dawsy Quema Grasa, línea de Danopac, SRL.
 
-1. Dawsy Quema Grasa (cápsulas de linaza 100% orgánica): disponible en presentaciones de 45, 90 y 100 cápsulas.
-2. Dawsy Fibra: en potes de 340g y 34g, en varios sabores (fresa, vainilla, manzana, naranja, piña).
+LÍNEA DE PRODUCTOS:
+1. Dawsy Quema Grasa (cápsulas de linaza 100% orgánica): presentaciones de 45, 90 y 100 cápsulas.
+2. Dawsy Fibra: potes de 340g y 34g, sabores fresa, vainilla, manzana, naranja, piña.
 3. Dawsy Fat: contiene Orlistat 120mg.
-4. Dawlax: contiene Picosulfato de sodio 7.5mg/ml, presentado en sobres, es un laxante.
+4. Dawlax: contiene Picosulfato de sodio 7.5mg/ml, en sobres, es laxante.
 
-Todos estos productos son parte de la línea para bajar de peso de Danopac, SRL.
+PRECIO: varía según farmacia, indica que consulten en la de su preferencia.
+DÓNDE COMPRAR: en farmacias.
 
-PRECIO:
-El precio puede variar según el punto de venta. Si preguntan cuánto cuesta, indica amablemente que deben consultar el precio en su farmacia más cercana o de su confianza.
+ESTILO:
+- Amigable, cercano, profesional.
+- MÁXIMO 2-3 oraciones cortas por respuesta. Ve directo al punto.
+- No saludes salvo que sea literalmente el primer mensaje de la conversación.
+- Texto plano, sin Markdown (nada de asteriscos, guiones, numerales).
+- IMPORTANTE: Dawsy Fat (Orlistat) y Dawlax (Picosulfato) son medicamentos. Nunca des dosis, tiempos de uso ni combinaciones con otros medicamentos — siempre remite a un médico o farmacéutico, en especial si hay embarazo, lactancia u otras condiciones.
+- No des consejos de dietas, calorías ni rutinas de pérdida de peso.
+- Temas fuera de Dawsy/Danopac: redirige amablemente al producto.
+- Si no sabes algo con certeza, no inventes: menciona que un asesor humano puede ayudar mejor.`;
 
-DÓNDE COMPRARLO:
-Disponible en farmacias.
-
-TU ESTILO DE RESPUESTA:
-- Responde de forma amigable, cercana y profesional, como parte del equipo de atención al cliente de Danopac.
-- Sé breve y claro, evita respuestas muy largas.
-- IMPORTANTE - SALUDOS: NO empieces cada respuesta con un saludo tipo "Hola". Responde directo, como en una conversación ya iniciada. Solo saluda si es literalmente el primer mensaje de la conversación.
-- IMPORTANTE - FORMATO: escribe en texto plano, sin Markdown (nada de asteriscos, guiones de lista, numerales, etc.).
-- IMPORTANTE - RESPONSABILIDAD MÉDICA: Dawsy Fat (Orlistat) y Dawlax (Picosulfato) son medicamentos, no suplementos simples. Nunca des indicaciones de dosis, tiempos de uso, ni combinaciones con otros medicamentos. Siempre recomienda consultar con un médico o farmacéutico antes de usarlos, especialmente si la persona tiene alguna condición de salud, está embarazada, en lactancia, o toma otros medicamentos.
-- No des consejos de dietas, calorías específicas, ni rutinas de pérdida de peso — enfócate solo en explicar qué es cada producto y sus características, y remite temas de salud o nutrición a un profesional.
-- Si preguntan algo que no tiene nada que ver con Dawsy o Danopac, redirige amablemente hacia el producto.
-- Si no sabes algo con certeza, no inventes información — menciona que un asesor humano puede ayudarles mejor.`;
-
+// ─────────────────────────────────────────────────────────
+// CONFIGURACIÓN DE CUENTAS
+// ─────────────────────────────────────────────────────────
+// pdfUrl y pdfMensaje son opcionales: si no hay PDF configurado para
+// una cuenta, la pregunta de "modo de uso" se responde normal con IA.
 const ACCOUNTS = {
   '17841477353996766': {
     name: 'plopiee',
     token: process.env.INSTAGRAM_TOKEN,
     systemInstruction: SYSTEM_INSTRUCTION_PLOPIEE,
     marca: "P'Lopiee",
+    pdfUrl: process.env.PLOPIEE_PDF_URL || null,
+    pdfMensaje: 'Claro, aquí tienes la ficha con el modo de uso de P\'Lopiee 👇',
   },
   '17841457133320413': {
     name: 'dawsy',
     token: process.env.INSTAGRAM_TOKEN_DAWSY,
     systemInstruction: SYSTEM_INSTRUCTION_DAWSY,
     marca: 'Dawsy Quema Grasa',
+    pdfUrl: process.env.DAWSY_PDF_URL || null,
+    pdfMensaje: 'Claro, aquí tienes la ficha con el modo de uso 👇 Recuerda que ante cualquier duda de salud lo mejor es consultar con tu médico o farmacéutico.',
   },
   // Cuando agregues TikTán u otro producto, solo agrega su entrada aquí:
   // 'ID_DE_INSTAGRAM_AQUI': {
@@ -98,6 +131,8 @@ const ACCOUNTS = {
   //   token: process.env.INSTAGRAM_TOKEN_TIKTAN,
   //   systemInstruction: SYSTEM_INSTRUCTION_TIKTAN,
   //   marca: 'TikTán',
+  //   pdfUrl: process.env.TIKTAN_PDF_URL || null,
+  //   pdfMensaje: 'Claro, aquí tienes la ficha con el modo de uso 👇',
   // },
 };
 
@@ -157,40 +192,56 @@ async function procesarMensaje({ senderId, userMessage, wamid, conversationId, a
     return;
   }
 
-  const pideHumano = PALABRAS_HUMANO.some((palabra) =>
-    userMessage.toLowerCase().includes(palabra)
-  );
-
-  if (pideHumano) {
-    await supabase
-      .from('conversations')
-      .update({ is_human: true, updated_at: new Date().toISOString() })
-      .eq('id', conversationId);
-
-    const mensajeConfirmacion = 'Listo, en un momento un asesor te atiende 🙌';
-
-    await supabase.from('messages').insert({
-      conversation_id: conversationId,
-      wa_message_id: `bot_${wamid}`,
-      role: 'bot',
-      content: mensajeConfirmacion,
-    });
-
-    await enviarMensajeInstagram(senderId, mensajeConfirmacion, cuenta.token);
-    await notificarWhatsApp(senderId, userMessage, cuenta);
+  // 1) ¿Pide hablar con un humano?
+  if (pideHumano(userMessage)) {
+    await escalarAHumano({ senderId, userMessage, wamid, conversationId, cuenta });
     return;
   }
 
+  // 2) ¿Pregunta por modo de uso y hay PDF configurado? -> responde sin llamar a Gemini
+  if (cuenta.pdfUrl && preguntaPorModoDeUso(userMessage)) {
+    await responderConPDF({ senderId, wamid, conversationId, cuenta });
+    return;
+  }
+
+  // 3) Caso normal: responde con IA
   const botResponse = await generarRespuestaGemini(userMessage, cuenta.systemInstruction);
+  await guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto: botResponse });
+}
+
+async function escalarAHumano({ senderId, userMessage, wamid, conversationId, cuenta }) {
+  await supabase
+    .from('conversations')
+    .update({ is_human: true, updated_at: new Date().toISOString() })
+    .eq('id', conversationId);
+
+  const mensajeConfirmacion = 'Listo, en un momento un asesor te atiende 🙌';
 
   await supabase.from('messages').insert({
     conversation_id: conversationId,
     wa_message_id: `bot_${wamid}`,
     role: 'bot',
-    content: botResponse,
+    content: mensajeConfirmacion,
   });
 
-  await enviarMensajeInstagram(senderId, botResponse, cuenta.token);
+  await enviarMensajeInstagram(senderId, mensajeConfirmacion, cuenta.token);
+  await notificarWhatsApp(senderId, userMessage, cuenta);
+}
+
+async function responderConPDF({ senderId, wamid, conversationId, cuenta }) {
+  await guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto: cuenta.pdfMensaje });
+  await enviarArchivoInstagram(senderId, cuenta.pdfUrl, cuenta.token);
+}
+
+async function guardarYEnviar({ senderId, wamid, conversationId, cuenta, texto }) {
+  await supabase.from('messages').insert({
+    conversation_id: conversationId,
+    wa_message_id: `bot_${wamid}`,
+    role: 'bot',
+    content: texto,
+  });
+
+  await enviarMensajeInstagram(senderId, texto, cuenta.token);
 
   await supabase
     .from('conversations')
@@ -205,7 +256,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
       contents: mensajeUsuario,
       config: {
         systemInstruction,
-        maxOutputTokens: 200,
+        maxOutputTokens: 130,
       },
     });
     return response.text;
@@ -220,7 +271,7 @@ async function generarRespuestaGemini(mensajeUsuario, systemInstruction) {
         const retryResponse = await ai.models.generateContent({
           model: 'gemini-3.1-flash-lite',
           contents: mensajeUsuario,
-          config: { systemInstruction, maxOutputTokens: 200 },
+          config: { systemInstruction, maxOutputTokens: 130 },
         });
         return retryResponse.text;
       } catch (retryError) {
@@ -243,21 +294,41 @@ async function enviarMensajeInstagram(recipientId, texto, token) {
       { params: { access_token: token } }
     );
   } catch (error) {
-    console.error('Error Facebook:', error.response?.data?.error?.message);
+    console.error('Error Facebook (texto):', error.response?.data?.error?.message);
+  }
+}
+
+// Envía un archivo (ej. PDF) usando la Send API de Instagram.
+// Requiere una URL pública (ej. un bucket público de Supabase Storage).
+async function enviarArchivoInstagram(recipientId, fileUrl, token) {
+  const url = `https://graph.instagram.com/v21.0/me/messages`;
+  try {
+    await axios.post(
+      url,
+      {
+        recipient: { id: recipientId },
+        message: {
+          attachment: {
+            type: 'file',
+            payload: { url: fileUrl, is_reusable: true },
+          },
+        },
+      },
+      { params: { access_token: token } }
+    );
+  } catch (error) {
+    console.error('Error Facebook (archivo):', error.response?.data?.error?.message);
   }
 }
 
 async function obtenerNombreUsuario(senderId, token) {
   try {
-    const response = await axios.get(
-      `https://graph.instagram.com/${senderId}`,
-      {
-        params: {
-          fields: 'name,username',
-          access_token: token,
-        },
-      }
-    );
+    const response = await axios.get(`https://graph.instagram.com/${senderId}`, {
+      params: {
+        fields: 'name,username',
+        access_token: token,
+      },
+    });
     return response.data.username || response.data.name || senderId;
   } catch (error) {
     console.error('Error obteniendo nombre de usuario:', error.response?.data?.error?.message);
